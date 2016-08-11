@@ -209,8 +209,11 @@ assign(Client.prototype, {
       if (!client.pool) {
         return rejecter(new Error('There is no pool defined on the current client'))
       }
+      const startTime = Date.now()
       request = client.pool.acquire(function(err, connection) {
         if (err) return rejecter(err)
+        const duration = Date.now() - startTime
+        client.emit('connection-acquire', {__knexUid: connection.__knexUid, duration}))
         debug('acquired connection from pool: %s', connection.__knexUid)
         resolver(connection)
       })
