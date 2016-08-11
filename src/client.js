@@ -213,8 +213,8 @@ assign(Client.prototype, {
       request = client.pool.acquire(function(err, connection) {
         if (err) return rejecter(err)
         const duration = Date.now() - startTime
-        client.emit('connection-acquire', {__knexUid: connection.__knexUid, duration}))
-        debug('acquired connection from pool: %s', connection.__knexUid)
+        client.emit('connection-acquire', {__knexUid: connection.__knexUid, duration})
+        debug('acquired connection from pool: %s %s ms', connection.__knexUid, duration)
         resolver(connection)
       })
     })
