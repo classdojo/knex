@@ -32,21 +32,21 @@ const debugQuery = require('debug')('knex:query')
 // for a dialect specific client object.
 function Client(config = {}) {
   this.config = config;
-  this.connectionSettings = cloneDeep(config.connection || {});
+  const connectionSettings = cloneDeep(config.connection || {});
   if (this.driverName && (config.connection || config.cluster)) {
     this.initializeDriver();
 
-    if (this.pool) this.destroy();
+    if (this.pool || this.cluster) this.destroy();
     if (config.pool && config.cluster) {
       throw new Error("Cannot specify both pool and cluster in config");
     }
 
     if (config.pool && config.pool.max !== 0) {
-      this.pool = this.initializePool();
+      this.pool = this.initializePool(config.pool, connectionSettings);
     }
 
     if (config.cluster) {
-      this.pool = this.initializeCluster();
+      this.cluster = this.initializeCluster(config.cluster, connectionSettings);
     }
   }
   this.valueForUndefined = this.raw('DEFAULT');
@@ -169,13 +169,16 @@ assign(Client.prototype, {
 
   Pool: Pool2,
 
-  initializeCluster(config) {
-    
-
+  initializeCluster(clusterConfig, connectionSettings) {
+    const client = this;
+    const pools = clusterConfig.map(function(poolConfig) {
+      return client.initializePool(poolConfig, assign(connectionSettings, poolConfig));
+    });
+    return new client.Pool.Cluster(pools);
   },
 
-  initializePool(config) {
-    let pool = new this.Pool(assign(this.poolDefaults(config.pool || {}), config.pool))
+  initializePool(poolConfig, connectionSettings) {
+    let pool = new this.Pool(assign(this.poolDefaults(poolConfig || {}, connectionSettings), poolConfig))
     pool.on('error', function(err) {
       helpers.error(`Pool2 - ${err}`)
     });
@@ -185,13 +188,13 @@ assign(Client.prototype, {
     return pool;
   },
 
-  poolDefaults(poolConfig) {
+  poolDefaults(poolConfig, coonectionSettings) {
     const client = this
     return {
       min: 2,
       max: 10,
       acquire(callback) {
-        client.acquireRawConnection()
+        client.acquireRawConnection(connectionSettings)
           .tap(function(connection) {
             connection.__knexUid = uniqueId('__knexUid')
             if (poolConfig.afterCreate) {
@@ -219,13 +222,14 @@ assign(Client.prototype, {
 
   // Acquire a connection from the pool.
   acquireConnection(capability) {
-    const client = this
-    let request = null
+    const client = this;
+    let request = null;
     const completed = new Promise(function(resolver, rejecter) {
-      if (!client.pool) {
+      if (!client.pool && !client.cluster) {
         return rejecter(new Error('There is no pool defined on the current client'))
       }
-      request = client.pool.acquire(capability, function(err, connection) {
+      const acquire = client.cluster ? client.pool.acquire.bind(client, capability);
+      request = acquire(function(err, connection) {
         if (err) return rejecter(err)
         client.emit("acquireConnection", domain.active, connection);
         debug('acquired connection from pool: %s', connection.__knexUid)
@@ -246,7 +250,7 @@ assign(Client.prototype, {
   // Releases a connection back to the connection pool,
   // returning a promise resolved when the connection is released.
   releaseConnection(connection) {
-    const { pool } = this
+    const pool = this.pool || this.cluster;
     this.emit("releaseConnection", domain.active, connection);
     return new Promise(function(resolver) {
       debug('releasing connection to pool: %s', connection.__knexUid)
@@ -258,10 +262,12 @@ assign(Client.prototype, {
   // Destroy the current connection pool for the client.
   destroy(callback) {
     const client = this;
+    const pool = this.pool || this.cluster;
     const promise = new Promise(function(resolver) {
-      if (!client.pool) return resolver()
-      client.pool.end(function() {
+      if (!pool) return resolver();
+      pool.end(function() {
         client.pool = undefined;
+        client.cluster = undefined;
         resolver();
       })
     })

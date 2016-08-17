@@ -22,19 +22,12 @@ assign(TableCompiler_MySQL.prototype, {
   createQuery(columns, ifNot) {
     const createStatement = ifNot ? 'create table if not exists ' : 'create table ';
     const { client } = this;
-    let conn = {};
     let sql = createStatement + this.tableName() + ' (' + columns.sql.join(', ') + ')';
 
-    // Check if the connection settings are set.
-    if (client.connectionSettings) {
-      conn = client.connectionSettings;
-    }
-
-    const charset = this.single.charset || conn.charset || '';
-    const collation = this.single.collate || conn.collate || '';
+    const charset = this.single.charset || client.charset || '';
+    const collation = this.single.collate || client.collate || '';
     const engine = this.single.engine  || '';
 
-    // var conn = builder.client.connectionSettings;
     if (charset)   sql += ` default character set ${charset}`;
     if (collation) sql += ` collate ${collation}`;
     if (engine)    sql += ` engine = ${engine}`;

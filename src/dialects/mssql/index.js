@@ -60,9 +60,9 @@ assign(Client_MSSQL.prototype, {
 
   // Get a raw connection, called by the `pool` whenever a new
   // connection needs to be added to the pool.
-  acquireRawConnection() {
+  acquireRawConnection(connectionSettings) {
     const client = this;
-    const connection = new this.driver.Connection(this.connectionSettings);
+    const connection = new this.driver.Connection(connectionSettings);
     return new Promise(function(resolver, rejecter) {
       connection.connect(function(err) {
         if (err) return rejecter(err);

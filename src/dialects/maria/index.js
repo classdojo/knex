@@ -29,9 +29,9 @@ assign(Client_MariaSQL.prototype, {
 
   // Get a raw connection, called by the `pool` whenever a new
   // connection needs to be added to the pool.
-  acquireRawConnection() {
+  acquireRawConnection(connectionSettings) {
     const connection = new this.driver();
-    connection.connect(assign({metadata: true}, this.connectionSettings));
+    connection.connect(assign({metadata: true}, connectionSettings));
     return new Promise(function(resolver, rejecter) {
       connection
         .on('ready', function() {
@@ -52,7 +52,7 @@ assign(Client_MariaSQL.prototype, {
 
   // Return the database for the MariaSQL client.
   database() {
-    return this.connectionSettings.db;
+    return this.database;
   },
 
   // Grab a connection, run the query via the MariaSQL streaming interface,
@@ -77,7 +77,7 @@ assign(Client_MariaSQL.prototype, {
   // Runs the query on the specified connection, providing the bindings
   // and any other necessary prep work.
   _query(connection, obj) {
-    const tz = this.connectionSettings.timezone || 'local';
+    const tz = this.timezone || 'local';
     return new Promise(function(resolver, rejecter) {
       if (!obj.sql) return resolver()
       const sql = SqlString.format(obj.sql, obj.bindings, tz);

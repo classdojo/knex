@@ -53,18 +53,18 @@ Client_Oracledb.prototype.prepBindings = function(bindings) {
 
 // Get a raw connection, called by the `pool` whenever a new
 // connection needs to be added to the pool.
-Client_Oracledb.prototype.acquireRawConnection = function() {
+Client_Oracledb.prototype.acquireRawConnection = function(connectionSettings) {
   const client = this;
   const asyncConnection = new Promise(function(resolver, rejecter) {
     client.driver.getConnection({
-      user: client.connectionSettings.user,
-      password: client.connectionSettings.password,
-      connectString: client.connectionSettings.host + '/' + client.connectionSettings.database
+      user: connectionSettings.user,
+      password: connectionSettings.password,
+      connectString: connectionSettings.host + '/' + connectionSettings.database
     }, function(err, connection) {
       if (err)
         return rejecter(err);
-      if (client.connectionSettings.prefetchRowCount) {
-        connection.setPrefetchRowCount(client.connectionSettings.prefetchRowCount);
+      if (connectionSettings.prefetchRowCount) {
+        connection.setPrefetchRowCount(connectionSettings.prefetchRowCount);
       }
 
       connection.commitAsync = function() {

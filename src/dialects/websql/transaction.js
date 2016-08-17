@@ -18,7 +18,6 @@ function makeClient(trx, client) {
 
   const trxClient = Object.create(client.constructor.prototype)
   trxClient.config = client.config
-  trxClient.connectionSettings = client.connectionSettings
   trxClient.transacting = true
 
   trxClient.on('query', function(arg) {

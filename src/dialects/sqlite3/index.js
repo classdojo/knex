@@ -50,10 +50,10 @@ assign(Client_SQLite3.prototype, {
   },
 
   // Get a raw connection from the database, returning a promise with the connection object.
-  acquireRawConnection() {
+  acquireRawConnection(connectionSettings) {
     const client = this;
     return new Promise(function(resolve, reject) {
-      const db = new client.driver.Database(client.connectionSettings.filename, function(err) {
+      const db = new client.driver.Database(connectionSettings.filename, function(err) {
         if (err) return reject(err)
         resolve(db)
       })
