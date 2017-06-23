@@ -11,6 +11,7 @@ export default [
   'into',
   'withSchema',
   'table',
+  'useIndex',
   'distinct',
   'join',
   'joinRaw',

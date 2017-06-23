@@ -30,6 +30,10 @@ assign(QueryCompiler_MySQL.prototype, {
       (limit ? ` ${limit}` : '');
   },
 
+  useIndex() {
+    return ` use index (${this.formatter.columnize(this.single.useIndex)})`;
+  },
+
   forUpdate() {
     return 'for update';
   },

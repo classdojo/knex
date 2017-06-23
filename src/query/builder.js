@@ -103,6 +103,11 @@ assign(Builder.prototype, {
     return this;
   },
 
+  useIndex(indexName) {
+    this._single.useIndex = indexName;
+    return this;
+  },
+
   // Adds a `distinct` clause to the query.
   distinct() {
     this._statements.push({
