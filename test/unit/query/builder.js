@@ -180,6 +180,13 @@ describe("QueryBuilder", function() {
     });
   });
 
+  it("allows index hint", function() {
+    testsql(qb().select('*').from('users').useIndex('myIndex'), {
+      mysql: 'select * from `users` use index (`myIndex`)',
+      default: 'select * from "users" use index ("myIndex")',
+    });
+  });
+
   it("basic wheres", function() {
     testsql(qb().select('*').from('users').where('id', '=', 1), {
       mysql: {
