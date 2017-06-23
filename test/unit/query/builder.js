@@ -183,7 +183,24 @@ describe("QueryBuilder", function() {
   it("allows index hint", function() {
     testsql(qb().select('*').from('users').useIndex('myIndex'), {
       mysql: 'select * from `users` use index (`myIndex`)',
-      default: 'select * from "users" use index ("myIndex")',
+      default: 'select * from "users"',
+    });
+  });
+
+  it("allows index hint with basic wheres", function() {
+    testsql(qb().select('*').from('users').useIndex('myIndex').where('id', '=', 1), {
+      mysql: {
+        sql: 'select * from `users` use index (`myIndex`) where `id` = ?',
+        bindings: [1]
+      },
+      default: {
+        sql: 'select * from "users" where "id" = ?',
+        bindings: [1]
+      }
+    });
+    testquery(qb().select('*').from('users').useIndex('myIndex').where('id', '=', 1), {
+      mysql: 'select * from `users` use index (`myIndex`) where `id` = 1',
+      default: 'select * from "users" where "id" = 1',
     });
   });
 

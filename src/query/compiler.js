@@ -159,7 +159,12 @@ assign(QueryCompiler.prototype, {
     if (sql.length === 0) sql = ['*'];
     return `select ${distinct ? 'distinct ' : ''}` + sql.join(', ') +
       (this.tableName ? ` from ${this.tableName}` : '') +
-      (this.single.useIndex ? ` use index (${this.formatter.columnize(this.single.useIndex)})` : '');
+      (this.single.useIndex ? this.useIndex() : '');
+  },
+
+  useIndex() {
+    helpers.warn("Index hint is currently not supported for this client type");
+    return '';
   },
 
   aggregate(stmt) {
