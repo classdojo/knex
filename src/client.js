@@ -1,9 +1,7 @@
-
-import domain from "domain";
 import Promise from 'bluebird';
-import * as helpers from './helpers';
 
 import Raw from './raw';
+import Ref from './ref';
 import Runner from './runner';
 import Formatter from './formatter';
 import Transaction from './transaction';
@@ -18,267 +16,360 @@ import TableCompiler from './schema/tablecompiler';
 import ColumnBuilder from './schema/columnbuilder';
 import ColumnCompiler from './schema/columncompiler';
 
-import Pool2 from 'pool2';
+import { Pool, TimeoutError } from 'tarn';
 import inherits from 'inherits';
 import { EventEmitter } from 'events';
-import SqlString from './query/string';
 
-import { assign, uniqueId, cloneDeep } from 'lodash'
+import { makeEscape } from './query/string';
+import { assign, uniqueId, cloneDeep, defaults } from 'lodash';
 
-const debug = require('debug')('knex:client')
-const debugQuery = require('debug')('knex:query')
+import Logger from './logger';
+
+const debug = require('debug')('knex:client');
+const debugQuery = require('debug')('knex:query');
+const debugBindings = require('debug')('knex:bindings');
+const { POOL_CONFIG_OPTIONS } = require('./constants');
 
 // The base client provides the general structure
 // for a dialect specific client object.
 function Client(config = {}) {
-  this.config = config
-  this.connectionSettings = cloneDeep(config.connection || {})
+  this.config = config;
+  this.logger = new Logger(config);
+
+  //Client is a required field, so throw error if it's not supplied.
+  //If 'this.dialect' is set, then this is a 'super()' call, in which case
+  //'client' does not have to be set as it's already assigned on the client prototype.
+
+  if (this.dialect && !this.config.client) {
+    this.logger.warn(
+      `Using 'this.dialect' to identify the client is deprecated and support for it will be removed in the future. Please use configuration option 'client' instead.`
+    );
+  }
+  const dbClient = this.config.client || this.dialect;
+  if (!dbClient) {
+    throw new Error(`knex: Required configuration option 'client' is missing.`);
+  }
+
+  if (config.version) {
+    this.version = config.version;
+  }
+
+  this.connectionSettings = cloneDeep(config.connection || {});
   if (this.driverName && config.connection) {
-    this.initializeDriver()
+    this.initializeDriver();
     if (!config.pool || (config.pool && config.pool.max !== 0)) {
-      this.initializePool(config)
+      this.initializePool(config);
     }
   }
   this.valueForUndefined = this.raw('DEFAULT');
   if (config.useNullAsDefault) {
-    this.valueForUndefined = null
+    this.valueForUndefined = null;
   }
 }
-inherits(Client, EventEmitter)
+inherits(Client, EventEmitter);
 
 assign(Client.prototype, {
-
-  Formatter,
-
-  formatter() {
-    return new this.Formatter(this)
+  formatter(builder) {
+    return new Formatter(this, builder);
   },
-
-  QueryBuilder,
 
   queryBuilder() {
-    return new this.QueryBuilder(this)
+    return new QueryBuilder(this);
   },
-
-  QueryCompiler,
 
   queryCompiler(builder) {
-    return new this.QueryCompiler(this, builder)
+    return new QueryCompiler(this, builder);
   },
-
-  SchemaBuilder,
 
   schemaBuilder() {
-    return new this.SchemaBuilder(this)
+    return new SchemaBuilder(this);
   },
-
-  SchemaCompiler,
 
   schemaCompiler(builder) {
-    return new this.SchemaCompiler(this, builder)
+    return new SchemaCompiler(this, builder);
   },
-
-  TableBuilder,
 
   tableBuilder(type, tableName, fn) {
-    return new this.TableBuilder(this, type, tableName, fn)
+    return new TableBuilder(this, type, tableName, fn);
   },
-
-  TableCompiler,
 
   tableCompiler(tableBuilder) {
-    return new this.TableCompiler(this, tableBuilder)
+    return new TableCompiler(this, tableBuilder);
   },
-
-  ColumnBuilder,
 
   columnBuilder(tableBuilder, type, args) {
-    return new this.ColumnBuilder(this, tableBuilder, type, args)
+    return new ColumnBuilder(this, tableBuilder, type, args);
   },
-
-  ColumnCompiler,
 
   columnCompiler(tableBuilder, columnBuilder) {
-    return new this.ColumnCompiler(this, tableBuilder, columnBuilder)
+    return new ColumnCompiler(this, tableBuilder, columnBuilder);
   },
 
-  Runner,
-
-  runner(connection) {
-    return new this.Runner(this, connection)
+  runner(builder) {
+    return new Runner(this, builder);
   },
-
-  SqlString,
-
-  Transaction,
 
   transaction(container, config, outerTx) {
-    return new this.Transaction(this, container, config, outerTx)
+    return new Transaction(this, container, config, outerTx);
   },
-
-  Raw,
 
   raw() {
-    const raw = new this.Raw(this)
-    return raw.set.apply(raw, arguments)
+    return new Raw(this).set(...arguments);
   },
 
+  ref() {
+    return new Ref(this, ...arguments);
+  },
+
+  _formatQuery(sql, bindings, timeZone) {
+    bindings = bindings == null ? [] : [].concat(bindings);
+    let index = 0;
+    return sql.replace(/\\?\?/g, (match) => {
+      if (match === '\\?') {
+        return '?';
+      }
+      if (index === bindings.length) {
+        return match;
+      }
+      const value = bindings[index++];
+      return this._escapeBinding(value, { timeZone });
+    });
+  },
+
+  _escapeBinding: makeEscape({
+    escapeString(str) {
+      return `'${str.replace(/'/g, "''")}'`;
+    },
+  }),
+
   query(connection, obj) {
-    if (typeof obj === 'string') obj = {sql: obj}
-    this.emit('query', assign({__knexUid: connection.__knexUid}, obj))
-    debugQuery(obj.sql)
-    return this._query.call(this, connection, obj).catch((err) => {
-      err.message = SqlString.format(obj.sql, obj.bindings) + ' - ' + err.message
-      this.emit('query-error', err, assign({__knexUid: connection.__knexUid}, obj))
-      throw err
-    })
+    if (typeof obj === 'string') obj = { sql: obj };
+    obj.bindings = this.prepBindings(obj.bindings);
+
+    const { __knexUid, __knexTxId } = connection;
+
+    this.emit('query', assign({ __knexUid, __knexTxId }, obj));
+    debugQuery(obj.sql, __knexTxId);
+    debugBindings(obj.bindings, __knexTxId);
+
+    obj.sql = this.positionBindings(obj.sql);
+
+    return this._query(connection, obj).catch((err) => {
+      err.message =
+        this._formatQuery(obj.sql, obj.bindings) + ' - ' + err.message;
+      this.emit('query-error', err, assign({ __knexUid, __knexTxId }, obj));
+      throw err;
+    });
   },
 
   stream(connection, obj, stream, options) {
-    if (typeof obj === 'string') obj = {sql: obj}
-    this.emit('query', assign({__knexUid: connection.__knexUid}, obj))
-    debugQuery(obj.sql)
-    return this._stream.call(this, connection, obj, stream, options)
+    if (typeof obj === 'string') obj = { sql: obj };
+    obj.bindings = this.prepBindings(obj.bindings);
+
+    const { __knexUid, __knexTxId } = connection;
+
+    this.emit('query', assign({ __knexUid, __knexTxId }, obj));
+    debugQuery(obj.sql, __knexTxId);
+    debugBindings(obj.bindings, __knexTxId);
+
+    obj.sql = this.positionBindings(obj.sql);
+
+    return this._stream(connection, obj, stream, options);
   },
 
   prepBindings(bindings) {
     return bindings;
   },
 
-  wrapIdentifier(value) {
-    return (value !== '*' ? `"${value.replace(/"/g, '""')}"` : '*')
+  positionBindings(sql) {
+    return sql;
+  },
+
+  postProcessResponse(resp, queryContext) {
+    if (this.config.postProcessResponse) {
+      return this.config.postProcessResponse(resp, queryContext);
+    }
+    return resp;
+  },
+
+  wrapIdentifier(value, queryContext) {
+    return this.customWrapIdentifier(
+      value,
+      this.wrapIdentifierImpl,
+      queryContext
+    );
+  },
+
+  customWrapIdentifier(value, origImpl, queryContext) {
+    if (this.config.wrapIdentifier) {
+      return this.config.wrapIdentifier(value, origImpl, queryContext);
+    }
+    return origImpl(value);
+  },
+
+  wrapIdentifierImpl(value) {
+    return value !== '*' ? `"${value.replace(/"/g, '""')}"` : '*';
   },
 
   initializeDriver() {
     try {
-      this.driver = this._driver()
+      this.driver = this._driver();
     } catch (e) {
-      helpers.exit(`Knex: run\n$ npm install ${this.driverName} --save\n${e.stack}`)
+      const message = `Knex: run\n$ npm install ${this.driverName} --save`;
+      this.logger.error(`${message}\n${e.message}\n${e.stack}`);
+      throw new Error(`${message}\n${e.message}`);
     }
   },
 
-  Pool: Pool2,
-
-  initializePool(config) {
-    if (this.pool) this.destroy()
-    this.pool = new this.Pool(assign(this.poolDefaults(config.pool || {}), config.pool))
-    this.pool.on('error', function(err) {
-      helpers.error(`Pool2 - ${err}`)
-    })
-    this.pool.on('warn', function(msg) {
-      helpers.warn(`Pool2 - ${msg}`)
-    })
+  poolDefaults() {
+    return { min: 2, max: 10, propagateCreateError: true };
   },
 
-  poolDefaults(poolConfig) {
-    const client = this
-    return {
-      min: 2,
-      max: 10,
-      acquire(callback) {
-        client.acquireRawConnection()
-          .tap(function(connection) {
-            connection.__knexUid = uniqueId('__knexUid')
-            if (poolConfig.afterCreate) {
-              return Promise.promisify(poolConfig.afterCreate)(connection)
-            }
-          })
-          .asCallback(callback)
+  getPoolSettings(poolConfig) {
+    poolConfig = defaults({}, poolConfig, this.poolDefaults());
+
+    POOL_CONFIG_OPTIONS.forEach((option) => {
+      if (option in poolConfig) {
+        this.logger.warn(
+          [
+            `Pool config option "${option}" is no longer supported.`,
+            `See https://github.com/Vincit/tarn.js for possible pool config options.`,
+          ].join(' ')
+        );
+      }
+    });
+
+    const timeouts = [
+      this.config.acquireConnectionTimeout || 60000,
+      poolConfig.acquireTimeoutMillis,
+    ].filter((timeout) => timeout !== undefined);
+
+    // acquire connection timeout can be set on config or config.pool
+    // choose the smallest, positive timeout setting and set on poolConfig
+    poolConfig.acquireTimeoutMillis = Math.min(...timeouts);
+
+    return Object.assign(poolConfig, {
+      create: () => {
+        return this.acquireRawConnection().tap((connection) => {
+          connection.__knexUid = uniqueId('__knexUid');
+
+          if (poolConfig.afterCreate) {
+            return Promise.promisify(poolConfig.afterCreate)(connection);
+          }
+        });
       },
-      dispose(connection, callback) {
+
+      destroy: (connection) => {
         if (poolConfig.beforeDestroy) {
-          poolConfig.beforeDestroy(connection, function() {
-            if (connection !== undefined) {
-              client.destroyRawConnection(connection, callback)
-            }
-          })
-        } else if (connection !== void 0) {
-          client.destroyRawConnection(connection, callback)
+          this.logger.warn(`
+            beforeDestroy is deprecated, please open an issue if you use this
+            to discuss alternative apis
+          `);
+
+          poolConfig.beforeDestroy(connection, function() {});
+        }
+
+        if (connection !== void 0) {
+          return this.destroyRawConnection(connection);
         }
       },
-      ping(resource, callback) {
-        return client.ping(resource, callback);
-      }
+
+      validate: (connection) => {
+        if (connection.__knex__disposed) {
+          this.logger.warn(`Connection Error: ${connection.__knex__disposed}`);
+          return false;
+        }
+
+        return this.validateConnection(connection);
+      },
+    });
+  },
+
+  initializePool(config = this.config) {
+    if (this.pool) {
+      this.logger.warn('The pool has already been initialized');
+      return;
     }
+
+    this.pool = new Pool(this.getPoolSettings(config.pool));
+  },
+
+  validateConnection(connection) {
+    return true;
   },
 
   // Acquire a connection from the pool.
   acquireConnection() {
-    const client = this
-    let request = null
-    const completed = new Promise(function(resolver, rejecter) {
-      if (!client.pool) {
-        return rejecter(new Error('There is no pool defined on the current client'))
-      }
-      request = client.pool.acquire(function(err, connection) {
-        if (err) return rejecter(err)
-        client.emit("acquireConnection", domain.active, connection);
-        debug('acquired connection from pool: %s', connection.__knexUid)
-        resolver(connection)
+    if (!this.pool) {
+      return Promise.reject(new Error('Unable to acquire a connection'));
+    }
+
+    return Promise.try(() => this.pool.acquire().promise)
+      .tap((connection) => {
+        debug('acquired connection from pool: %s', connection.__knexUid);
       })
-    })
-    const abort = function(reason) {
-      if (request && !request.fulfilled) {
-        request.abort(reason)
-      }
-    }
-    return {
-      completed: completed,
-      abort: abort
-    }
+      .catch(TimeoutError, () => {
+        throw new Promise.TimeoutError(
+          'Knex: Timeout acquiring a connection. The pool is probably full. ' +
+            'Are you missing a .transacting(trx) call?'
+        );
+      });
   },
 
   // Releases a connection back to the connection pool,
   // returning a promise resolved when the connection is released.
   releaseConnection(connection) {
-    const { pool } = this
-    this.emit("releaseConnection", domain.active, connection);
-    return new Promise(function(resolver) {
-      debug('releasing connection to pool: %s', connection.__knexUid)
-      pool.release(connection)
-      resolver()
-    })
+    debug('releasing connection to pool: %s', connection.__knexUid);
+    const didRelease = this.pool.release(connection);
+
+    if (!didRelease) {
+      debug('pool refused connection: %s', connection.__knexUid);
+    }
+
+    return Promise.resolve();
   },
 
   // Destroy the current connection pool for the client.
   destroy(callback) {
-    const client = this
-    const promise = new Promise(function(resolver) {
-      if (!client.pool) return resolver()
-      client.pool.end(function() {
-        client.pool = undefined
-        resolver()
+    const maybeDestroy = this.pool && this.pool.destroy();
+
+    return Promise.resolve(maybeDestroy)
+      .then(() => {
+        this.pool = void 0;
+
+        if (typeof callback === 'function') {
+          callback();
+        }
       })
-    })
-    // Allow either a callback or promise interface for destruction.
-    if (typeof callback === 'function') {
-      promise.asCallback(callback)
-    } else {
-      return promise
-    }
+      .catch((err) => {
+        if (typeof callback === 'function') {
+          callback(err);
+        }
+
+        return Promise.reject(err);
+      });
   },
 
   // Return the database being used by this client.
   database() {
-    return this.connectionSettings.database
+    return this.connectionSettings.database;
   },
 
   toString() {
-    return '[object KnexClient]'
+    return '[object KnexClient]';
   },
 
   canCancelQuery: false,
 
   assertCanCancelQuery() {
     if (!this.canCancelQuery) {
-      throw new Error("Query cancelling not supported for this dialect");
+      throw new Error('Query cancelling not supported for this dialect');
     }
   },
 
   cancelQuery() {
-    throw new Error("Query cancelling not supported for this dialect")
-  }
+    throw new Error('Query cancelling not supported for this dialect');
+  },
+});
 
-})
-
-export default Client
+export default Client;

@@ -1,14 +1,12 @@
-
 // Oracle Client
 // -------
-import { assign, map, flatten, values } from 'lodash'
+import { assign, map, flatten, values } from 'lodash';
 
 import inherits from 'inherits';
-import Formatter from './formatter';
 import Client from '../../client';
 import Promise from 'bluebird';
-import * as helpers from '../../helpers';
-import SqlString from '../../query/string';
+import { bufferToString } from '../../query/string';
+import Formatter from './formatter';
 
 import Transaction from './transaction';
 import QueryCompiler from './query/compiler';
@@ -16,124 +14,151 @@ import SchemaCompiler from './schema/compiler';
 import ColumnBuilder from './schema/columnbuilder';
 import ColumnCompiler from './schema/columncompiler';
 import TableCompiler from './schema/tablecompiler';
-import OracleQueryStream from './stream';
 import { ReturningHelper } from './utils';
 
 // Always initialize with the "QueryBuilder" and "QueryCompiler"
 // objects, which extend the base 'lib/query/builder' and
 // 'lib/query/compiler', respectively.
-function Client_Oracle(config) {
-  Client.call(this, config)
+export default function Client_Oracle(config) {
+  Client.call(this, config);
 }
-inherits(Client_Oracle, Client)
+inherits(Client_Oracle, Client);
 
 assign(Client_Oracle.prototype, {
-
   dialect: 'oracle',
 
   driverName: 'oracle',
 
   _driver() {
-    return require('oracle')
+    return require('oracle');
   },
 
-  Transaction,
+  transaction() {
+    return new Transaction(this, ...arguments);
+  },
 
-  Formatter,
+  formatter() {
+    return new Formatter(this, ...arguments);
+  },
 
-  QueryCompiler,
+  queryCompiler() {
+    return new QueryCompiler(this, ...arguments);
+  },
 
-  SchemaCompiler,
+  schemaCompiler() {
+    return new SchemaCompiler(this, ...arguments);
+  },
 
-  ColumnBuilder,
+  columnBuilder() {
+    return new ColumnBuilder(this, ...arguments);
+  },
 
-  ColumnCompiler,
+  columnCompiler() {
+    return new ColumnCompiler(this, ...arguments);
+  },
 
-  TableCompiler,
+  tableCompiler() {
+    return new TableCompiler(this, ...arguments);
+  },
 
   prepBindings(bindings) {
     return map(bindings, (value) => {
       // returning helper uses always ROWID as string
       if (value instanceof ReturningHelper && this.driver) {
-        return new this.driver.OutParam(this.driver.OCCISTRING)
+        return new this.driver.OutParam(this.driver.OCCISTRING);
+      } else if (typeof value === 'boolean') {
+        return value ? 1 : 0;
+      } else if (Buffer.isBuffer(value)) {
+        return bufferToString(value);
       }
-      else if (typeof value === 'boolean') {
-        return value ? 1 : 0
-      }
-      else if (Buffer.isBuffer(value)) {
-        return SqlString.bufferToString(value)
-      }
-      return value
-    })
+      return value;
+    });
   },
 
   // Get a raw connection, called by the `pool` whenever a new
   // connection needs to be added to the pool.
   acquireRawConnection() {
-    const client = this
-    return new Promise(function(resolver, rejecter) {
-      client.driver.connect(client.connectionSettings,
-        function(err, connection) {
-          if (err) return rejecter(err)
-          Promise.promisifyAll(connection)
-          if (client.connectionSettings.prefetchRowCount) {
-            connection.setPrefetchRowCount(client.connectionSettings.prefetchRowCount)
-          }
-          resolver(connection)
-        })
-    })
+    return new Promise((resolver, rejecter) => {
+      this.driver.connect(this.connectionSettings, (err, connection) => {
+        if (err) return rejecter(err);
+        Promise.promisifyAll(connection);
+        if (this.connectionSettings.prefetchRowCount) {
+          connection.setPrefetchRowCount(
+            this.connectionSettings.prefetchRowCount
+          );
+        }
+        resolver(connection);
+      });
+    });
   },
 
   // Used to explicitly close a connection, called internally by the pool
   // when a connection times out or the pool is shutdown.
-  destroyRawConnection(connection, cb) {
-    connection.close()
-    cb()
+  destroyRawConnection(connection) {
+    return Promise.fromCallback(connection.close.bind(connection));
   },
 
   // Return the database for the Oracle client.
   database() {
-    return this.connectionSettings.database
+    return this.connectionSettings.database;
   },
 
   // Position the bindings for the query.
   positionBindings(sql) {
-    let questionCount = 0
+    let questionCount = 0;
     return sql.replace(/\?/g, function() {
-      questionCount += 1
-      return `:${questionCount}`
-    })
+      questionCount += 1;
+      return `:${questionCount}`;
+    });
   },
 
   _stream(connection, obj, stream, options) {
-    obj.sql = this.positionBindings(obj.sql);
-    return new Promise(function (resolver, rejecter) {
-      stream.on('error', rejecter);
+    return new Promise(function(resolver, rejecter) {
+      stream.on('error', (err) => {
+        if (isConnectionError(err)) {
+          connection.__knex__disposed = err;
+        }
+        rejecter(err);
+      });
       stream.on('end', resolver);
-      const queryStream = new OracleQueryStream(connection, obj.sql, obj.bindings, options);
-      queryStream.pipe(stream)
+      const queryStream = connection.queryStream(
+        obj.sql,
+        obj.bindings,
+        options
+      );
+      queryStream.pipe(stream);
+      queryStream.on('error', function(error) {
+        rejecter(error);
+        stream.emit('error', error);
+      });
     });
   },
 
   // Runs the query on the specified connection, providing the bindings
   // and any other necessary prep work.
   _query(connection, obj) {
-
-    // convert ? params into positional bindings (:1)
-    obj.sql = this.positionBindings(obj.sql);
-
     if (!obj.sql) throw new Error('The query is empty');
 
-    return connection.executeAsync(obj.sql, obj.bindings).then(function(response) {
-      if (!obj.returning) return response
-      const rowIds = obj.outParams.map((v, i) => response[`returnParam${i ? i : ''}`]);
-      return connection.executeAsync(obj.returningSql, rowIds)
-    }).then(function(response) {
-      obj.response = response;
-      obj.rowsAffected  = response.updateCount;
-      return obj;
-    })
-
+    return connection
+      .executeAsync(obj.sql, obj.bindings)
+      .then(function(response) {
+        if (!obj.returning) return response;
+        const rowIds = obj.outParams.map(
+          (v, i) => response[`returnParam${i ? i : ''}`]
+        );
+        return connection.executeAsync(obj.returningSql, rowIds);
+      })
+      .then(function(response) {
+        obj.response = response;
+        obj.rowsAffected = response.updateCount;
+        return obj;
+      })
+      .catch((err) => {
+        if (isConnectionError(err)) {
+          connection.__knex__disposed = err;
+        }
+        throw err;
+      });
   },
 
   // Process the response as returned from the query.
@@ -145,7 +170,6 @@ assign(Client_Oracle.prototype, {
       case 'select':
       case 'pluck':
       case 'first':
-        response = helpers.skim(response);
         if (obj.method === 'pluck') response = map(response, obj.pluck);
         return obj.method === 'first' ? response[0] : response;
       case 'insert':
@@ -164,11 +188,18 @@ assign(Client_Oracle.prototype, {
         return response;
     }
   },
+});
 
-  ping(resource, callback) {
-    resource.execute('SELECT 1 FROM DUAL', [], callback);
-  }
+// If the error is any of these, we'll assume we need to
+// mark the connection as failed
+const connectionErrors = [
+  'ORA-12514',
+  'NJS-040',
+  'NJS-024',
+  'NJS-003',
+  'NJS-024',
+];
 
-})
-
-export default Client_Oracle
+function isConnectionError(err) {
+  return connectionErrors.some((prefix) => err.message.indexOf(prefix) === 0);
+}

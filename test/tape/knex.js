@@ -1,79 +1,80 @@
 'use strict';
 
-var knex = require('../../lib/index');
-var test = require('tape')
-
-test('it should have the same version as constructor has', function(t) {
-  t.plan(1)
-  var knexObj = knex({
-    database: 'dbname',
-    host: 'example.com',
-    password: 'password',
-    user: 'user'
-  })
-  t.equal(knexObj.VERSION, knex.VERSION)
-  knexObj.destroy()
-})
+const knex = require('../../lib/index');
+const test = require('tape');
 
 test('it should parse the connection string', function(t) {
-  t.plan(1)
-  var knexObj = knex({
+  t.plan(1);
+  const knexObj = knex({
     client: 'mysql',
-    connection: "mysql://user:password@example.com/dbname"
-  })
+    connection: 'mysql://user:password@localhost/dbname',
+  });
   t.deepEqual(knexObj.client.config.connection, {
     database: 'dbname',
-    host: 'example.com',
+    host: 'localhost',
     password: 'password',
-    user: 'user'
-  })
-  knexObj.destroy()
-})
+    user: 'user',
+  });
+  knexObj.destroy();
+});
 
 test('it should allow to use proprietary dialect', function(t) {
-  t.plan(2)
-  var Client = require('../../lib/dialects/mysql')
-  var knexObj = knex({
+  t.plan(2);
+  const Client = require('../../lib/dialects/mysql');
+  const knexObj = knex({
     client: Client,
     connection: {
       database: 'dbname',
-      host: 'example.com',
+      host: 'localhost',
       password: 'password',
-      user: 'user'
-    }
-  })
-  t.ok(knexObj.client instanceof Client)
+      user: 'user',
+    },
+  });
+  t.ok(knexObj.client instanceof Client);
   t.deepEqual(knexObj.client.config, {
     client: Client,
     connection: {
       database: 'dbname',
-      host: 'example.com',
+      host: 'localhost',
       password: 'password',
-      user: 'user'
-    }
-  })
-  knexObj.destroy()
-})
+      user: 'user',
+    },
+  });
+  knexObj.destroy();
+});
 
-test('it should use knex suppoted dialect', function(t) {
-  t.plan(1)
-  var knexObj = knex({
+test('it should use knex supported dialect', function(t) {
+  t.plan(1);
+  const knexObj = knex({
     client: 'postgres',
     connection: {
       database: 'dbname',
-      host: 'example.com',
+      host: 'localhost',
       password: 'password',
-      user: 'user'
-    }
-  })
+      user: 'user',
+    },
+  });
   t.deepEqual(knexObj.client.config, {
     client: 'postgres',
     connection: {
       database: 'dbname',
-      host: 'example.com',
+      host: 'localhost',
       password: 'password',
-      user: 'user'
-    }
-  })
-  knexObj.destroy()
-})
+      user: 'user',
+    },
+  });
+  knexObj.destroy();
+});
+
+test('it should throw error if client is omitted in config', function(t) {
+  t.plan(1);
+  try {
+    knex({});
+    t.deepEqual(true, false); //Don't reach this point
+  } catch (error) {
+    t.deepEqual(
+      error.message,
+      "knex: Required configuration option 'client' is missing."
+    );
+  }
+});

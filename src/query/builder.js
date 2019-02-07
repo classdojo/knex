@@ -1,4 +1,3 @@
-
 // Builder
 // -------
 import assert from 'assert';
@@ -9,29 +8,60 @@ import Raw from '../raw';
 import * as helpers from '../helpers';
 import JoinClause from './joinclause';
 import {
-  assign, clone, each, isBoolean, isEmpty, isFunction, isNumber, isObject,
-  isString, isUndefined, tail, toArray
+  assign,
+  clone,
+  each,
+  isBoolean,
+  isEmpty,
+  isFunction,
+  isNumber,
+  isObject,
+  isString,
+  isUndefined,
+  tail,
+  toArray,
+  reject,
+  includes,
 } from 'lodash';
+import saveAsyncStack from '../util/save-async-stack';
 
 // Typically called from `knex.builder`,
 // start a new query building chain.
 function Builder(client) {
-  this.client = client
+  this.client = client;
   this.and = this;
   this._single = {};
   this._statements = [];
-  this._method = 'select'
-  this._debug = client.config && client.config.debug;
-
+  this._method = 'select';
+  if (client.config) {
+    saveAsyncStack(this, 5);
+    this._debug = client.config.debug;
+  }
   // Internal flags used in the builder.
   this._joinFlag = 'inner';
   this._boolFlag = 'and';
   this._notFlag = false;
+  this._asColumnFlag = false;
 }
 inherits(Builder, EventEmitter);
 
-assign(Builder.prototype, {
+const validateWithArgs = function(alias, statement, method) {
+  if (typeof alias !== 'string') {
+    throw new Error(`${method}() first argument must be a string`);
+  }
+  if (
+    typeof statement === 'function' ||
+    statement instanceof Builder ||
+    statement instanceof Raw
+  ) {
+    return;
+  }
+  throw new Error(
+    `${method}() second argument must be a function / QueryBuilder or a raw`
+  );
+};
 
+assign(Builder.prototype, {
   toString() {
     return this.toQuery();
   },
@@ -53,12 +83,18 @@ assign(Builder.prototype, {
     if (!isUndefined(this._options)) {
       cloned._options = clone(this._options);
     }
+    if (!isUndefined(this._queryContext)) {
+      cloned._queryContext = clone(this._queryContext);
+    }
+    if (!isUndefined(this._connection)) {
+      cloned._connection = this._connection;
+    }
 
     return cloned;
   },
 
-  timeout(ms, {cancel} = {}) {
-    if(isNumber(ms) && ms > 0) {
+  timeout(ms, { cancel } = {}) {
+    if (isNumber(ms) && ms > 0) {
       this._timeout = ms;
       if (cancel) {
         this.client.assertCanCancelQuery();
@@ -68,16 +104,50 @@ assign(Builder.prototype, {
     return this;
   },
 
+  // With
+  // ------
+
+  with(alias, statement) {
+    validateWithArgs(alias, statement, 'with');
+    return this.withWrapped(alias, statement);
+  },
+
+  // Helper for compiling any advanced `with` queries.
+  withWrapped(alias, query) {
+    this._statements.push({
+      grouping: 'with',
+      type: 'withWrapped',
+      alias: alias,
+      value: query,
+    });
+    return this;
+  },
+
+  // With Recursive
+  // ------
+
+  withRecursive(alias, statement) {
+    validateWithArgs(alias, statement, 'withRecursive');
+    return this.withRecursiveWrapped(alias, statement);
+  },
+
+  // Helper for compiling any advanced `withRecursive` queries.
+  withRecursiveWrapped(alias, query) {
+    this.withWrapped(alias, query);
+    this._statements[this._statements.length - 1].recursive = true;
+    return this;
+  },
+
   // Select
   // ------
 
   // Adds a column or columns to the list of "columns"
   // being selected on the query.
   columns(column) {
-    if (!column) return this;
+    if (!column && column !== 0) return this;
     this._statements.push({
       grouping: 'columns',
-      value: helpers.normalizeArr.apply(null, arguments)
+      value: helpers.normalizeArr.apply(null, arguments),
     });
     return this;
   },
@@ -98,8 +168,12 @@ assign(Builder.prototype, {
   // Sets the `tableName` on the query.
   // Alias to "from" for select and "into" for insert statements
   // e.g. builder.insert({a: value}).into('tableName')
-  table(tableName) {
+  // `options`: options object containing keys:
+  //   - `only`: whether the query should use SQL's ONLY to not return
+  //           inheriting table data. Defaults to false.
+  table(tableName, options = {}) {
     this._single.table = tableName;
+    this._single.only = options.only === true;
     return this;
   },
 
@@ -113,7 +187,7 @@ assign(Builder.prototype, {
     this._statements.push({
       grouping: 'columns',
       value: helpers.normalizeArr.apply(null, arguments),
-      distinct: true
+      distinct: true,
     });
     return this;
   },
@@ -131,7 +205,11 @@ assign(Builder.prototype, {
     } else if (joinType === 'raw') {
       join = new JoinClause(this.client.raw(table, first), 'raw');
     } else {
-      join = new JoinClause(table, joinType, schema);
+      join = new JoinClause(
+        table,
+        joinType,
+        table instanceof Builder ? undefined : schema
+      );
       if (arguments.length > 1) {
         join.on.apply(join, toArray(arguments).slice(1));
       }
@@ -173,10 +251,9 @@ assign(Builder.prototype, {
   // The most basic is `where(key, value)`, which expands to
   // where key = value.
   where(column, operator, value) {
-
     // Support "where true || where false"
     if (column === false || column === true) {
-      return this.where(1, '=', column ? 1 : 0)
+      return this.where(1, '=', column ? 1 : 0);
     }
 
     // Check if the column is a function, in which case it's
@@ -186,10 +263,12 @@ assign(Builder.prototype, {
     }
 
     // Allow a raw statement to be passed along to the query.
-    if (column instanceof Raw && arguments.length === 1) return this.whereRaw(column);
+    if (column instanceof Raw && arguments.length === 1)
+      return this.whereRaw(column);
 
     // Allows `where({id: 2})` syntax.
-    if (isObject(column) && !(column instanceof Raw)) return this._objectWhere(column);
+    if (isObject(column) && !(column instanceof Raw))
+      return this._objectWhere(column);
 
     // Enable the where('key', value) syntax, only when there
     // are explicitly two arguments passed, so it's not possible to
@@ -206,22 +285,27 @@ assign(Builder.prototype, {
     }
 
     // lower case the operator for comparison purposes
-    const checkOperator = (`${operator}`).toLowerCase().trim();
+    const checkOperator = `${operator}`.toLowerCase().trim();
 
     // If there are 3 arguments, check whether 'in' is one of them.
     if (arguments.length === 3) {
       if (checkOperator === 'in' || checkOperator === 'not in') {
-        return this._not(checkOperator === 'not in').whereIn(arguments[0], arguments[2]);
+        return this._not(checkOperator === 'not in').whereIn(
+          arguments[0],
+          arguments[2]
+        );
       }
       if (checkOperator === 'between' || checkOperator === 'not between') {
-        return this._not(checkOperator === 'not between').whereBetween(arguments[0], arguments[2]);
+        return this._not(checkOperator === 'not between').whereBetween(
+          arguments[0],
+          arguments[2]
+        );
       }
     }
 
     // If the value is still null, check whether they're meaning
     // where value is null
     if (value === null) {
-
       // Check for .where(key, 'is', null) or .where(key, 'is not', 'null');
       if (checkOperator === 'is' || checkOperator === 'is not') {
         return this._not(checkOperator === 'is not').whereNull(column);
@@ -236,17 +320,26 @@ assign(Builder.prototype, {
       operator,
       value,
       not: this._not(),
-      bool: this._bool()
+      bool: this._bool(),
+      asColumn: this._asColumnFlag,
     });
     return this;
   },
+
+  whereColumn(column, operator, rightColumn) {
+    this._asColumnFlag = true;
+    this.where.apply(this, arguments);
+    this._asColumnFlag = false;
+    return this;
+  },
+
   // Adds an `or where` clause to the query.
-  orWhere: function orWhere() {
+  orWhere() {
     this._bool('or');
     const obj = arguments[0];
-    if(isObject(obj) && !isFunction(obj) && !(obj instanceof Raw)) {
+    if (isObject(obj) && !isFunction(obj) && !(obj instanceof Raw)) {
       return this.whereWrapped(function() {
-        for(const key in obj) {
+        for (const key in obj) {
           this.andWhere(key, obj[key]);
         }
       });
@@ -254,14 +347,35 @@ assign(Builder.prototype, {
     return this.where.apply(this, arguments);
   },
 
+  orWhereColumn() {
+    this._bool('or');
+    const obj = arguments[0];
+    if (isObject(obj) && !isFunction(obj) && !(obj instanceof Raw)) {
+      return this.whereWrapped(function() {
+        for (const key in obj) {
+          this.andWhereColumn(key, '=', obj[key]);
+        }
+      });
+    }
+    return this.whereColumn.apply(this, arguments);
+  },
+
   // Adds an `not where` clause to the query.
   whereNot() {
     return this._not(true).where.apply(this, arguments);
   },
 
+  whereNotColumn() {
+    return this._not(true).whereColumn.apply(this, arguments);
+  },
+
   // Adds an `or not where` clause to the query.
   orWhereNot() {
     return this._bool('or').whereNot.apply(this, arguments);
+  },
+
+  orWhereNotColumn() {
+    return this._bool('or').whereNotColumn.apply(this, arguments);
   },
 
   // Processes an object literal provided in a "where" clause.
@@ -276,13 +390,13 @@ assign(Builder.prototype, {
 
   // Adds a raw `where` clause to the query.
   whereRaw(sql, bindings) {
-    const raw = (sql instanceof Raw ? sql : this.client.raw(sql, bindings));
+    const raw = sql instanceof Raw ? sql : this.client.raw(sql, bindings);
     this._statements.push({
       grouping: 'where',
       type: 'whereRaw',
       value: raw,
       not: this._not(),
-      bool: this._bool()
+      bool: this._bool(),
     });
     return this;
   },
@@ -298,19 +412,7 @@ assign(Builder.prototype, {
       type: 'whereWrapped',
       value: callback,
       not: this._not(),
-      bool: this._bool()
-    });
-    return this;
-  },
-
-
-  // Helper for compiling any advanced `having` queries.
-  havingWrapped(callback) {
-    this._statements.push({
-      grouping: 'having',
-      type: 'whereWrapped',
-      value: callback,
-      bool: this._bool()
+      bool: this._bool(),
     });
     return this;
   },
@@ -344,14 +446,15 @@ assign(Builder.prototype, {
 
   // Adds a `where in` clause to the query.
   whereIn(column, values) {
-    if (Array.isArray(values) && isEmpty(values)) return this.where(this._not());
+    if (Array.isArray(values) && isEmpty(values))
+      return this.where(this._not());
     this._statements.push({
       grouping: 'where',
       type: 'whereIn',
       column,
       value: values,
       not: this._not(),
-      bool: this._bool()
+      bool: this._bool(),
     });
     return this;
   },
@@ -368,7 +471,9 @@ assign(Builder.prototype, {
 
   // Adds a `or where not in` clause to the query.
   orWhereNotIn(column, values) {
-    return this._bool('or')._not(true).whereIn(column, values);
+    return this._bool('or')
+      ._not(true)
+      .whereIn(column, values);
   },
 
   // Adds a `where null` clause to the query.
@@ -378,7 +483,7 @@ assign(Builder.prototype, {
       type: 'whereNull',
       column,
       not: this._not(),
-      bool: this._bool()
+      bool: this._bool(),
     });
     return this;
   },
@@ -400,15 +505,21 @@ assign(Builder.prototype, {
 
   // Adds a `where between` clause to the query.
   whereBetween(column, values) {
-    assert(Array.isArray(values), 'The second argument to whereBetween must be an array.')
-    assert(values.length === 2, 'You must specify 2 values for the whereBetween clause')
+    assert(
+      Array.isArray(values),
+      'The second argument to whereBetween must be an array.'
+    );
+    assert(
+      values.length === 2,
+      'You must specify 2 values for the whereBetween clause'
+    );
     this._statements.push({
       grouping: 'where',
       type: 'whereBetween',
       column,
       value: values,
       not: this._not(),
-      bool: this._bool()
+      bool: this._bool(),
     });
     return this;
   },
@@ -436,48 +547,72 @@ assign(Builder.prototype, {
     this._statements.push({
       grouping: 'group',
       type: 'groupByBasic',
-      value: helpers.normalizeArr.apply(null, arguments)
+      value: helpers.normalizeArr.apply(null, arguments),
     });
     return this;
   },
 
   // Adds a raw `group by` clause to the query.
   groupByRaw(sql, bindings) {
-    const raw = (sql instanceof Raw ? sql : this.client.raw(sql, bindings));
+    const raw = sql instanceof Raw ? sql : this.client.raw(sql, bindings);
     this._statements.push({
       grouping: 'group',
       type: 'groupByRaw',
-      value: raw
+      value: raw,
     });
     return this;
   },
 
   // Adds a `order by` clause to the query.
   orderBy(column, direction) {
+    if (Array.isArray(column)) {
+      return this._orderByArray(column);
+    }
     this._statements.push({
       grouping: 'order',
       type: 'orderByBasic',
       value: column,
-      direction
+      direction,
     });
+    return this;
+  },
+
+  // Adds a `order by` with multiple columns to the query.
+  _orderByArray(columnDefs) {
+    for (let i = 0; i < columnDefs.length; i++) {
+      const columnInfo = columnDefs[i];
+      if (isObject(columnInfo)) {
+        this._statements.push({
+          grouping: 'order',
+          type: 'orderByBasic',
+          value: columnInfo['column'],
+          direction: columnInfo['order'],
+        });
+      } else if (isString(columnInfo)) {
+        this._statements.push({
+          grouping: 'order',
+          type: 'orderByBasic',
+          value: columnInfo,
+        });
+      }
+    }
     return this;
   },
 
   // Add a raw `order by` clause to the query.
   orderByRaw(sql, bindings) {
-    const raw = (sql instanceof Raw ? sql : this.client.raw(sql, bindings));
+    const raw = sql instanceof Raw ? sql : this.client.raw(sql, bindings);
     this._statements.push({
       grouping: 'order',
       type: 'orderByRaw',
-      value: raw
+      value: raw,
     });
     return this;
   },
 
   // Add a union statement to the query.
   union(callbacks, wrap) {
-    if (arguments.length === 1 ||
-        (arguments.length === 2 && isBoolean(wrap))) {
+    if (arguments.length === 1 || (arguments.length === 2 && isBoolean(wrap))) {
       if (!Array.isArray(callbacks)) {
         callbacks = [callbacks];
       }
@@ -486,7 +621,7 @@ assign(Builder.prototype, {
           grouping: 'union',
           clause: 'union',
           value: callbacks[i],
-          wrap: wrap || false
+          wrap: wrap || false,
         });
       }
     } else {
@@ -507,7 +642,7 @@ assign(Builder.prototype, {
       grouping: 'union',
       clause: 'union all',
       value: callback,
-      wrap: wrap || false
+      wrap: wrap || false,
     });
     return this;
   },
@@ -515,7 +650,7 @@ assign(Builder.prototype, {
   // Adds a `having` clause to the query.
   having(column, operator, value) {
     if (column instanceof Raw && arguments.length === 1) {
-      return this._havingRaw(column);
+      return this.havingRaw(column);
     }
 
     // Check if the column is a function, in which case it's
@@ -530,30 +665,167 @@ assign(Builder.prototype, {
       column,
       operator,
       value,
-      bool: this._bool()
+      bool: this._bool(),
+      not: this._not(),
     });
     return this;
   },
-  // Adds an `or having` clause to the query.
-  orHaving() {
-    return this._bool('or').having.apply(this, arguments);
+
+  orHaving: function orHaving() {
+    this._bool('or');
+    const obj = arguments[0];
+    if (isObject(obj) && !isFunction(obj) && !(obj instanceof Raw)) {
+      return this.havingWrapped(function() {
+        for (const key in obj) {
+          this.andHaving(key, obj[key]);
+        }
+      });
+    }
+    return this.having.apply(this, arguments);
   },
-  havingRaw(sql, bindings) {
-    return this._havingRaw(sql, bindings);
+
+  // Helper for compiling any advanced `having` queries.
+  havingWrapped(callback) {
+    this._statements.push({
+      grouping: 'having',
+      type: 'havingWrapped',
+      value: callback,
+      bool: this._bool(),
+      not: this._not(),
+    });
+    return this;
   },
-  orHavingRaw(sql, bindings) {
-    return this._bool('or').havingRaw(sql, bindings);
+
+  havingNull(column) {
+    this._statements.push({
+      grouping: 'having',
+      type: 'havingNull',
+      column,
+      not: this._not(),
+      bool: this._bool(),
+    });
+    return this;
   },
+
+  orHavingNull(callback) {
+    return this._bool('or').havingNull(callback);
+  },
+
+  havingNotNull(callback) {
+    return this._not(true).havingNull(callback);
+  },
+
+  orHavingNotNull(callback) {
+    return this._not(true)
+      ._bool('or')
+      .havingNull(callback);
+  },
+
+  havingExists(callback) {
+    this._statements.push({
+      grouping: 'having',
+      type: 'havingExists',
+      value: callback,
+      not: this._not(),
+      bool: this._bool(),
+    });
+    return this;
+  },
+
+  orHavingExists(callback) {
+    return this._bool('or').havingExists(callback);
+  },
+
+  havingNotExists(callback) {
+    return this._not(true).havingExists(callback);
+  },
+
+  orHavingNotExists(callback) {
+    return this._not(true)
+      ._bool('or')
+      .havingExists(callback);
+  },
+
+  havingBetween(column, values) {
+    assert(
+      Array.isArray(values),
+      'The second argument to havingBetween must be an array.'
+    );
+    assert(
+      values.length === 2,
+      'You must specify 2 values for the havingBetween clause'
+    );
+    this._statements.push({
+      grouping: 'having',
+      type: 'havingBetween',
+      column,
+      value: values,
+      not: this._not(),
+      bool: this._bool(),
+    });
+    return this;
+  },
+
+  orHavingBetween(column, values) {
+    return this._bool('or').havingBetween(column, values);
+  },
+
+  havingNotBetween(column, values) {
+    return this._not(true).havingBetween(column, values);
+  },
+
+  orHavingNotBetween(column, values) {
+    return this._not(true)
+      ._bool('or')
+      .havingBetween(column, values);
+  },
+
+  havingIn(column, values) {
+    if (Array.isArray(values) && isEmpty(values))
+      return this.where(this._not());
+    this._statements.push({
+      grouping: 'having',
+      type: 'havingIn',
+      column,
+      value: values,
+      not: this._not(),
+      bool: this._bool(),
+    });
+    return this;
+  },
+
+  // Adds a `or where in` clause to the query.
+  orHavingIn(column, values) {
+    return this._bool('or').havingIn(column, values);
+  },
+
+  // Adds a `where not in` clause to the query.
+  havingNotIn(column, values) {
+    return this._not(true).havingIn(column, values);
+  },
+
+  // Adds a `or where not in` clause to the query.
+  orHavingNotIn(column, values) {
+    return this._bool('or')
+      ._not(true)
+      .havingIn(column, values);
+  },
+
   // Adds a raw `having` clause to the query.
-  _havingRaw(sql, bindings) {
-    const raw = (sql instanceof Raw ? sql : this.client.raw(sql, bindings));
+  havingRaw(sql, bindings) {
+    const raw = sql instanceof Raw ? sql : this.client.raw(sql, bindings);
     this._statements.push({
       grouping: 'having',
       type: 'havingRaw',
       value: raw,
-      bool: this._bool()
+      bool: this._bool(),
+      not: this._not(),
     });
     return this;
+  },
+
+  orHavingRaw(sql, bindings) {
+    return this._bool('or').havingRaw(sql, bindings);
   },
 
   // Only allow a single "offset" to be set for the current query.
@@ -564,9 +836,9 @@ assign(Builder.prototype, {
 
   // Only allow a single "limit" to be set for the current query.
   limit(value) {
-    const val = parseInt(value, 10)
+    const val = parseInt(value, 10);
     if (isNaN(val)) {
-      helpers.warn('A valid integer must be provided to limit')
+      this.client.logger.warn('A valid integer must be provided to limit');
     } else {
       this._single.limit = val;
     }
@@ -575,7 +847,7 @@ assign(Builder.prototype, {
 
   // Retrieve the "count" result of the query.
   count(column) {
-    return this._aggregate('count', (column || '*'));
+    return this._aggregate('count', column || '*');
   },
 
   // Retrieve the minimum value of a given column.
@@ -599,8 +871,16 @@ assign(Builder.prototype, {
   },
 
   // Retrieve the "count" of the distinct results of the query.
-  countDistinct(column) {
-    return this._aggregate('count', (column || '*'), true);
+  countDistinct() {
+    let columns = helpers.normalizeArr.apply(null, arguments);
+
+    if (!columns.length) {
+      columns = '*';
+    } else if (columns.length === 1) {
+      columns = columns[0];
+    }
+
+    return this._aggregate('count', columns, true);
   },
 
   // Retrieve the sum of the distinct values of a given column.
@@ -614,18 +894,47 @@ assign(Builder.prototype, {
   },
 
   // Increments a column's value by the specified amount.
-  increment(column, amount) {
+  increment(column, amount = 1) {
+    if (isObject(column)) {
+      for (const key in column) {
+        this._counter(key, column[key]);
+      }
+
+      return this;
+    }
+
     return this._counter(column, amount);
   },
 
   // Decrements a column's value by the specified amount.
-  decrement(column, amount) {
-    return this._counter(column, amount, '-');
+  decrement(column, amount = 1) {
+    if (isObject(column)) {
+      for (const key in column) {
+        this._counter(key, -column[key]);
+      }
+
+      return this;
+    }
+
+    return this._counter(column, -amount);
+  },
+
+  // Clears increments/decrements
+  clearCounters() {
+    this._single.counter = {};
+
+    return this;
   },
 
   // Sets the values for a `select` query, informing that only the first
   // row should be returned (limit 1).
   first() {
+    const { _method } = this;
+
+    if (!includes(['pluck', 'first', 'select'], _method)) {
+      throw new Error(`Cannot chain .first() on "${_method}" query!`);
+    }
+
     const args = new Array(arguments.length);
     for (let i = 0; i < args.length; i++) {
       args[i] = arguments[i];
@@ -636,6 +945,13 @@ assign(Builder.prototype, {
     return this;
   },
 
+  // Use existing connection to execute the query
+  // Same value that client.acquireConnection() for an according client returns should be passed
+  connection(_connection) {
+    this._connection = _connection;
+    return this;
+  },
+
   // Pluck a column from a query.
   pluck(column) {
     this._method = 'pluck';
@@ -643,8 +959,26 @@ assign(Builder.prototype, {
     this._statements.push({
       grouping: 'columns',
       type: 'pluck',
-      value: column
+      value: column,
     });
+    return this;
+  },
+
+  // Remove everything from select clause
+  clearSelect() {
+    this._clearGrouping('columns');
+    return this;
+  },
+
+  // Remove everything from select clause
+  clearWhere() {
+    this._clearGrouping('where');
+    return this;
+  },
+
+  // Remove everything from select clause
+  clearOrder() {
+    this._clearGrouping('order');
     return this;
   },
 
@@ -655,7 +989,7 @@ assign(Builder.prototype, {
   insert(values, returning) {
     this._method = 'insert';
     if (!isEmpty(returning)) this.returning(returning);
-    this._single.insert = values
+    this._single.insert = values;
     return this;
   },
 
@@ -673,11 +1007,11 @@ assign(Builder.prototype, {
     } else {
       const keys = Object.keys(values);
       if (this._single.update) {
-        helpers.warn('Update called multiple times with objects.')
+        this.client.logger.warn('Update called multiple times with objects.');
       }
       let i = -1;
       while (++i < keys.length) {
-        obj[keys[i]] = values[keys[i]]
+        obj[keys[i]] = values[keys[i]];
       }
       ret = arguments[1];
     }
@@ -702,12 +1036,11 @@ assign(Builder.prototype, {
     return this;
   },
 
-
   // Truncates a table, ends the query chain.
   truncate(tableName) {
     this._method = 'truncate';
     if (tableName) {
-      this._single.table = tableName
+      this._single.table = tableName;
     }
     return this;
   },
@@ -722,12 +1055,14 @@ assign(Builder.prototype, {
   // Set a lock for update constraint.
   forUpdate() {
     this._single.lock = 'forUpdate';
+    this._single.lockTables = helpers.normalizeArr.apply(null, arguments);
     return this;
   },
 
   // Set a lock for share constraint.
   forShare() {
     this._single.lock = 'forShare';
+    this._single.lockTables = helpers.normalizeArr.apply(null, arguments);
     return this;
   },
 
@@ -735,15 +1070,15 @@ assign(Builder.prototype, {
   fromJS(obj) {
     each(obj, (val, key) => {
       if (typeof this[key] !== 'function') {
-        helpers.warn(`Knex Error: unknown key ${key}`)
+        this.client.logger.warn(`Knex Error: unknown key ${key}`);
       }
       if (Array.isArray(val)) {
-        this[key].apply(this, val)
+        this[key].apply(this, val);
       } else {
-        this[key](val)
+        this[key](val);
       }
-    })
-    return this
+    });
+    return this;
   },
 
   // Passes query to provided callback function, useful for e.g. composing
@@ -756,15 +1091,15 @@ assign(Builder.prototype, {
   // ----------------------------------------------------------------------
 
   // Helper for the incrementing/decrementing queries.
-  _counter(column, amount, symbol) {
-    let amt = parseInt(amount, 10);
-    if (isNaN(amt)) amt = 1;
-    this._method = 'counter';
-    this._single.counter = {
-      column,
-      amount: amt,
-      symbol: (symbol || '+')
-    };
+  _counter(column, amount) {
+    amount = parseFloat(amount);
+
+    this._method = 'update';
+
+    this._single.counter = this._single.counter || {};
+
+    this._single.counter[column] = amount;
+
     return this;
   },
 
@@ -791,7 +1126,7 @@ assign(Builder.prototype, {
   },
 
   // Helper to get or set the "joinFlag" value.
-  _joinType (val) {
+  _joinType(val) {
     if (arguments.length === 1) {
       this._joinFlag = val;
       return this;
@@ -805,41 +1140,56 @@ assign(Builder.prototype, {
   _aggregate(method, column, aggregateDistinct) {
     this._statements.push({
       grouping: 'columns',
-      type: 'aggregate',
+      type: column instanceof Raw ? 'aggregateRaw' : 'aggregate',
       method,
       value: column,
-      aggregateDistinct: aggregateDistinct || false
+      aggregateDistinct: aggregateDistinct || false,
     });
     return this;
-  }
+  },
 
-})
+  // Helper function for clearing or reseting a grouping type from the builder
+  _clearGrouping(grouping) {
+    this._statements = reject(this._statements, { grouping });
+  },
+});
 
 Object.defineProperty(Builder.prototype, 'or', {
-  get () {
+  get() {
     return this._bool('or');
-  }
+  },
 });
 
 Object.defineProperty(Builder.prototype, 'not', {
-  get () {
+  get() {
     return this._not(true);
-  }
+  },
 });
 
-Builder.prototype.select = Builder.prototype.columns
-Builder.prototype.column = Builder.prototype.columns
-Builder.prototype.andWhereNot = Builder.prototype.whereNot
-Builder.prototype.andWhere = Builder.prototype.where
-Builder.prototype.andWhereRaw = Builder.prototype.whereRaw
-Builder.prototype.andWhereBetween = Builder.prototype.whereBetween
-Builder.prototype.andWhereNotBetween = Builder.prototype.whereNotBetween
-Builder.prototype.andHaving = Builder.prototype.having
-Builder.prototype.from = Builder.prototype.table
-Builder.prototype.into = Builder.prototype.table
-Builder.prototype.del = Builder.prototype.delete
+Builder.prototype.select = Builder.prototype.columns;
+Builder.prototype.column = Builder.prototype.columns;
+Builder.prototype.andWhereNot = Builder.prototype.whereNot;
+Builder.prototype.andWhereNotColumn = Builder.prototype.whereNotColumn;
+Builder.prototype.andWhere = Builder.prototype.where;
+Builder.prototype.andWhereColumn = Builder.prototype.whereColumn;
+Builder.prototype.andWhereRaw = Builder.prototype.whereRaw;
+Builder.prototype.andWhereBetween = Builder.prototype.whereBetween;
+Builder.prototype.andWhereNotBetween = Builder.prototype.whereNotBetween;
+Builder.prototype.andHaving = Builder.prototype.having;
+Builder.prototype.andHavingIn = Builder.prototype.havingIn;
+Builder.prototype.andHavingNotIn = Builder.prototype.havingNotIn;
+Builder.prototype.andHavingNull = Builder.prototype.havingNull;
+Builder.prototype.andHavingNotNull = Builder.prototype.havingNotNull;
+Builder.prototype.andHavingExists = Builder.prototype.havingExists;
+Builder.prototype.andHavingNotExists = Builder.prototype.havingNotExists;
+Builder.prototype.andHavingBetween = Builder.prototype.havingBetween;
+Builder.prototype.andHavingNotBetween = Builder.prototype.havingNotBetween;
+Builder.prototype.from = Builder.prototype.table;
+Builder.prototype.into = Builder.prototype.table;
+Builder.prototype.del = Builder.prototype.delete;
 
 // Attach all of the top level promise methods that should be chainable.
 require('../interface')(Builder);
+helpers.addQueryContext(Builder);
 
 export default Builder;

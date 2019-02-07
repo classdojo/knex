@@ -1,4 +1,3 @@
-
 // TableBuilder
 
 // Takes the function passed to the "createTable" or "table/editTable"
@@ -7,11 +6,11 @@
 // method, pushing everything we want to do onto the "allStatements" array,
 // which is then compiled into sql.
 // ------
-import { extend, each, toArray, isString, isFunction } from 'lodash'
+import { extend, each, toArray, isString, isFunction } from 'lodash';
 import * as helpers from '../helpers';
 
 function TableBuilder(client, method, tableName, fn) {
-  this.client = client
+  this.client = client;
   this._fn = fn;
   this._method = method;
   this._schemaName = undefined;
@@ -19,10 +18,10 @@ function TableBuilder(client, method, tableName, fn) {
   this._statements = [];
   this._single = {};
 
-  if(!isFunction(this._fn)) {
+  if (!isFunction(this._fn)) {
     throw new TypeError(
       'A callback function must be supplied to calls against `.createTable` ' +
-      'and `.table`'
+        'and `.table`'
     );
   }
 }
@@ -42,42 +41,50 @@ TableBuilder.prototype.toSQL = function() {
   return this.client.tableCompiler(this).toSQL();
 };
 
-each([
+each(
+  [
+    // Each of the index methods can be called individually, with the
+    // column name to be used, e.g. table.unique('column').
+    'index',
+    'primary',
+    'unique',
 
-  // Each of the index methods can be called individually, with the
-  // column name to be used, e.g. table.unique('column').
-  'index', 'primary', 'unique',
-
-  // Key specific
-  'dropPrimary', 'dropUnique', 'dropIndex', 'dropForeign'
-
-], function(method) {
-  TableBuilder.prototype[method] = function() {
-    this._statements.push({
-      grouping: 'alterTable',
-      method,
-      args: toArray(arguments)
-    });
-    return this;
-  };
-});
+    // Key specific
+    'dropPrimary',
+    'dropUnique',
+    'dropIndex',
+    'dropForeign',
+  ],
+  function(method) {
+    TableBuilder.prototype[method] = function() {
+      this._statements.push({
+        grouping: 'alterTable',
+        method,
+        args: toArray(arguments),
+      });
+      return this;
+    };
+  }
+);
 
 // Warn for dialect-specific table methods, since that's the
 // only time these are supported.
 const specialMethods = {
   mysql: ['engine', 'charset', 'collate'],
-  postgresql: ['inherits']
+  postgresql: ['inherits'],
 };
 each(specialMethods, function(methods, dialect) {
   each(methods, function(method) {
     TableBuilder.prototype[method] = function(value) {
       if (this.client.dialect !== dialect) {
-        helpers.warn(`Knex only supports ${method} statement with ${dialect}.`);
+        this.client.logger.warn(
+          `Knex only supports ${method} statement with ${dialect}.`
+        );
       }
       if (this._method === 'alter') {
-        helpers.warn(
+        this.client.logger.warn(
           `Knex does not support altering the ${method} outside of create ` +
-          `table, please use knex.raw statement.`
+            `table, please use knex.raw statement.`
         );
       }
       this._single[method] = value;
@@ -85,10 +92,11 @@ each(specialMethods, function(methods, dialect) {
   });
 });
 
+helpers.addQueryContext(TableBuilder);
+
 // Each of the column types that we can add, we create a new ColumnBuilder
 // instance and push it onto the statements array.
 const columnTypes = [
-
   // Numeric
   'tinyint',
   'smallint',
@@ -142,12 +150,11 @@ const columnTypes = [
   'biginteger',
   'bigInteger',
   'string',
-  'timestamps',
   'json',
   'jsonb',
   'uuid',
   'enu',
-  'specificType'
+  'specificType',
 ];
 
 // For each of the column methods, create a new "ColumnBuilder" interface,
@@ -156,46 +163,46 @@ const columnTypes = [
 each(columnTypes, function(type) {
   TableBuilder.prototype[type] = function() {
     const args = toArray(arguments);
-
-    // The "timestamps" call is really a compound call to set the
-    // `created_at` and `updated_at` columns.
-    if (type === 'timestamps') {
-      const col = (args[0] === true) ? 'timestamp' : 'datetime';
-      const createdAt = this[col]('created_at');
-      const updatedAt = this[col]('updated_at');
-      if (args[1] === true) {
-        const now = this.client.raw('CURRENT_TIMESTAMP');
-        createdAt.notNullable().defaultTo(now);
-        updatedAt.notNullable().defaultTo(now);
-      }
-      return;
-    }
     const builder = this.client.columnBuilder(this, type, args);
-
     this._statements.push({
       grouping: 'columns',
-      builder
+      builder,
     });
     return builder;
   };
-
 });
+
+// The "timestamps" call is really just sets the `created_at` and `updated_at` columns.
+TableBuilder.prototype.timestamps = function timestamps() {
+  const method = arguments[0] === true ? 'timestamp' : 'datetime';
+  const createdAt = this[method]('created_at');
+  const updatedAt = this[method]('updated_at');
+  if (arguments[1] === true) {
+    const now = this.client.raw('CURRENT_TIMESTAMP');
+    createdAt.notNullable().defaultTo(now);
+    updatedAt.notNullable().defaultTo(now);
+  }
+  return;
+};
 
 // Set the comment value for a table, they're only allowed to be called
 // once per table.
 TableBuilder.prototype.comment = function(value) {
+  if (typeof value !== 'string') {
+    throw new TypeError('Table comment must be string');
+  }
   this._single.comment = value;
 };
 
 // Set a foreign key on the table, calling
 // `table.foreign('column_name').references('column').on('table').onDelete()...
 // Also called from the ColumnBuilder context when chaining.
-TableBuilder.prototype.foreign = function(column) {
-  const foreignData = {column};
+TableBuilder.prototype.foreign = function(column, keyName) {
+  const foreignData = { column: column, keyName: keyName };
   this._statements.push({
     grouping: 'alterTable',
     method: 'foreign',
-    args: [foreignData]
+    args: [foreignData],
   });
   let returnObj = {
     references(tableColumn) {
@@ -208,18 +215,24 @@ TableBuilder.prototype.foreign = function(column) {
         return {
           on(tableName) {
             if (typeof tableName !== 'string') {
-              throw new TypeError(`Expected tableName to be a string, got: ${typeof tableName}`);
+              throw new TypeError(
+                `Expected tableName to be a string, got: ${typeof tableName}`
+              );
             }
             foreignData.inTable = tableName;
             return returnObj;
           },
           inTable() {
             return this.on.apply(this, arguments);
-          }
+          },
         };
       }
       foreignData.inTable = pieces[0];
       foreignData.references = pieces[1];
+      return returnObj;
+    },
+    withKeyName(keyName) {
+      foreignData.keyName = keyName;
       return returnObj;
     },
     onUpdate(statement) {
@@ -234,42 +247,39 @@ TableBuilder.prototype.foreign = function(column) {
       extend(builder, returnObj);
       returnObj = builder;
       return builder;
-    }
+    },
   };
   return returnObj;
-}
+};
 
 const AlterMethods = {
-
   // Renames the current column `from` the current
   // TODO: this.column(from).rename(to)
   renameColumn(from, to) {
     this._statements.push({
       grouping: 'alterTable',
       method: 'renameColumn',
-      args: [from, to]
+      args: [from, to],
     });
     return this;
   },
 
   dropTimestamps() {
     return this.dropColumns(['created_at', 'updated_at']);
-  }
+  },
 
   // TODO: changeType
 };
 
 // Drop a column from the current table.
 // TODO: Enable this.column(columnName).drop();
-AlterMethods.dropColumn =
-AlterMethods.dropColumns = function() {
+AlterMethods.dropColumn = AlterMethods.dropColumns = function() {
   this._statements.push({
     grouping: 'alterTable',
     method: 'dropColumn',
-    args: toArray(arguments)
+    args: toArray(arguments),
   });
   return this;
 };
-
 
 export default TableBuilder;

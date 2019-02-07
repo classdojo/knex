@@ -1,7 +1,5 @@
 #!/bin/bash -e
 
-git checkout master
-
 changelog=node_modules/.bin/changelog
 
 update_version() {
@@ -31,15 +29,6 @@ update_version 'package.json' $next_version
 git commit -am "release $next_version"
 git tag $next_version
 
-git push origin master
-git push origin master --tags
-
-echo "# Publishing docs"
-
-git checkout gh-pages
-git reset --hard origin/gh-pages
-git merge master
-git push origin gh-pages
-git checkout master
+git push --tags
 
 npm publish
