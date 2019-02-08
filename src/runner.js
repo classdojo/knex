@@ -174,6 +174,7 @@ assign(Runner.prototype, {
           // it gets destroyed by the pool and is never used again. If we don't do this and
           // return the connection to the pool, it will be useless until the current operation
           // that timed out, finally finishes.
+          error.message = 'onTimeout: ' + error.message;
           this.connection.__knex__disposed = error;
           cancelQuery = Promise.resolve();
         }
@@ -184,6 +185,7 @@ assign(Runner.prototype, {
             // it gets destroyed by the pool and is never used again. If we don't do this and
             // return the connection to the pool, it will be useless until the current operation
             // that timed out, finally finishes.
+            error.message = 'onTimeoutCancel: ' + error.message;
             this.connection.__knex__disposed = error;
 
             // cancellation failed

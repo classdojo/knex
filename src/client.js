@@ -276,7 +276,9 @@ assign(Client.prototype, {
 
       validate: (connection) => {
         if (connection.__knex__disposed) {
-          this.logger.warn(`Connection Error: ${connection.__knex__disposed}`);
+          this.logger.warn(
+            `Connection Error on validate: ${connection.__knex__disposed}`
+          );
           return false;
         }
 

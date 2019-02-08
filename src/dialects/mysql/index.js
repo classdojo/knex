@@ -63,6 +63,7 @@ assign(Client_MySQL.prototype, {
     return new Promise((resolver, rejecter) => {
       const connection = this.driver.createConnection(this.connectionSettings);
       connection.on('error', (err) => {
+        err.message = 'onAcquire: ' + err.message;
         connection.__knex__disposed = err;
       });
       connection.connect((err) => {
@@ -81,6 +82,7 @@ assign(Client_MySQL.prototype, {
   destroyRawConnection(connection) {
     return Promise.fromCallback(connection.end.bind(connection))
       .catch((err) => {
+        err.message = 'onDestroy: ' + err.message;
         connection.__knex__disposed = err;
       })
       .finally(() => connection.removeAllListeners());
