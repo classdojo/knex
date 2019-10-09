@@ -1,16 +1,16 @@
-/*global expect, describe, it*/
+/*global expect*/
 /*eslint no-var:0, indent:0, max-len:0 */
 'use strict';
 
-var MySQL_Client = require('../../../lib/dialects/mysql');
-var PG_Client = require('../../../lib/dialects/postgres');
-var Redshift_Client = require('../../../lib/dialects/redshift');
-var Oracledb_Client = require('../../../lib/dialects/oracledb');
-var SQLite3_Client = require('../../../lib/dialects/sqlite3');
-var MSSQL_Client = require('../../../lib/dialects/mssql');
+const MySQL_Client = require('../../../lib/dialects/mysql');
+const PG_Client = require('../../../lib/dialects/postgres');
+const Redshift_Client = require('../../../lib/dialects/redshift');
+const Oracledb_Client = require('../../../lib/dialects/oracledb');
+const SQLite3_Client = require('../../../lib/dialects/sqlite3');
+const MSSQL_Client = require('../../../lib/dialects/mssql');
 
 // use driverName as key
-var clients = {
+const clients = {
   mysql: new MySQL_Client({ client: 'mysql' }),
   pg: new PG_Client({ client: 'pg' }),
   'pg-redshift': new Redshift_Client({ client: 'redshift' }),
@@ -19,9 +19,9 @@ var clients = {
   mssql: new MSSQL_Client({ client: 'mssql' }),
 };
 
-var useNullAsDefaultConfig = { useNullAsDefault: true };
+const useNullAsDefaultConfig = { useNullAsDefault: true };
 // use driverName as key
-var clientsWithNullAsDefault = {
+const clientsWithNullAsDefault = {
   mysql: new MySQL_Client(
     Object.assign({ client: 'mysql' }, useNullAsDefaultConfig)
   ),
@@ -55,7 +55,7 @@ function ref(ref) {
 }
 
 function verifySqlResult(dialect, expectedObj, sqlObj) {
-  Object.keys(expectedObj).forEach(function(key) {
+  Object.keys(expectedObj).forEach((key) => {
     if (typeof expectedObj[key] === 'function') {
       expectedObj[key](sqlObj[key]);
     } else {
@@ -71,12 +71,12 @@ function verifySqlResult(dialect, expectedObj, sqlObj) {
 
 function testsql(chain, valuesToCheck, selectedClients) {
   selectedClients = selectedClients || clients;
-  Object.keys(valuesToCheck).forEach(function(key) {
-    var newChain = chain.clone();
+  Object.keys(valuesToCheck).forEach((key) => {
+    const newChain = chain.clone();
     newChain.client = selectedClients[key];
-    var sqlAndBindings = newChain.toSQL();
+    const sqlAndBindings = newChain.toSQL();
 
-    var checkValue = valuesToCheck[key];
+    const checkValue = valuesToCheck[key];
     if (typeof checkValue === 'string') {
       verifySqlResult(key, { sql: checkValue }, sqlAndBindings);
     } else {
@@ -87,30 +87,30 @@ function testsql(chain, valuesToCheck, selectedClients) {
 
 function testNativeSql(chain, valuesToCheck, selectedClients) {
   selectedClients = selectedClients || clients;
-  Object.keys(valuesToCheck).forEach(function(key) {
-    var newChain = chain.clone();
+  Object.keys(valuesToCheck).forEach((key) => {
+    const newChain = chain.clone();
     newChain.client = selectedClients[key];
-    var sqlAndBindings = newChain.toSQL().toNative();
-    var checkValue = valuesToCheck[key];
+    const sqlAndBindings = newChain.toSQL().toNative();
+    const checkValue = valuesToCheck[key];
     verifySqlResult(key, checkValue, sqlAndBindings);
   });
 }
 
 function testquery(chain, valuesToCheck, selectedClients) {
   selectedClients = selectedClients || clients;
-  Object.keys(valuesToCheck).forEach(function(key) {
-    var newChain = chain.clone();
+  Object.keys(valuesToCheck).forEach((key) => {
+    const newChain = chain.clone();
     newChain.client = selectedClients[key];
-    var sqlString = newChain.toQuery();
-    var checkValue = valuesToCheck[key];
+    const sqlString = newChain.toQuery();
+    const checkValue = valuesToCheck[key];
     expect(checkValue).to.equal(sqlString);
   });
 }
 
-describe('Custom identifier wrapping', function() {
-  var customWrapperConfig = {
+describe('Custom identifier wrapping', () => {
+  const customWrapperConfig = {
     wrapIdentifier: (value, clientImpl, context) => {
-      var suffix = '_wrapper_was_here';
+      let suffix = '_wrapper_was_here';
       if (context && context.fancy) {
         suffix = '_fancy_wrapper_was_here';
       }
@@ -119,7 +119,7 @@ describe('Custom identifier wrapping', function() {
   };
 
   // use driverName as key
-  var clientsWithCustomIdentifierWrapper = {
+  const clientsWithCustomIdentifierWrapper = {
     mysql: new MySQL_Client(
       Object.assign({ client: 'mysql' }, customWrapperConfig)
     ),
@@ -162,7 +162,7 @@ describe('Custom identifier wrapping', function() {
     );
   });
 
-  it('should use custom wrapper on multiple inserts with returning', function() {
+  it('should use custom wrapper on multiple inserts with returning', () => {
     // returning only supported directly by postgres and with workaround with oracle
     // other databases implicitly return the inserted id
     testsql(
@@ -200,7 +200,7 @@ describe('Custom identifier wrapping', function() {
         oracledb: {
           sql:
             'begin execute immediate \'insert into "users_wrapper_was_here" ("email_wrapper_was_here", "name_wrapper_was_here") values (:1, :2) returning "id_wrapper_was_here" into :3\' using ?, ?, out ?; execute immediate \'insert into "users_wrapper_was_here" ("email_wrapper_was_here", "name_wrapper_was_here") values (:1, :2) returning "id_wrapper_was_here" into :3\' using ?, ?, out ?;end;',
-          bindings: function(bindings) {
+          bindings: (bindings) => {
             expect(bindings.length).to.equal(6);
             expect(bindings[0]).to.equal('foo');
             expect(bindings[1]).to.equal('taylor');
@@ -219,7 +219,7 @@ describe('Custom identifier wrapping', function() {
     );
   });
 
-  it('should use custom wrapper on multiple inserts with multiple returning', function() {
+  it('should use custom wrapper on multiple inserts with multiple returning', () => {
     testsql(
       qb()
         .from('users')
@@ -256,7 +256,7 @@ describe('Custom identifier wrapping', function() {
         oracledb: {
           sql:
             'begin execute immediate \'insert into "users_wrapper_was_here" ("email_wrapper_was_here", "name_wrapper_was_here") values (:1, :2) returning "id_wrapper_was_here","name_wrapper_was_here" into :3, :4\' using ?, ?, out ?, out ?; execute immediate \'insert into "users_wrapper_was_here" ("email_wrapper_was_here", "name_wrapper_was_here") values (:1, :2) returning "id_wrapper_was_here","name_wrapper_was_here" into :3, :4\' using ?, ?, out ?, out ?;end;',
-          bindings: function(bindings) {
+          bindings: (bindings) => {
             expect(bindings.length).to.equal(8);
             expect(bindings[0]).to.equal('foo');
             expect(bindings[1]).to.equal('taylor');
@@ -328,7 +328,7 @@ describe('Custom identifier wrapping', function() {
     });
 
     it('should allow chaining', () => {
-      var builder = qb();
+      const builder = qb();
       expect(builder.queryContext({ foo: 'foo' })).to.deep.equal(builder);
     });
 
@@ -351,15 +351,15 @@ describe('Custom identifier wrapping', function() {
       });
 
       it('should not modify the original query context if the clone is modified', () => {
-        var original = qb().queryContext({ foo: 'foo' });
-        var clone = original.clone().queryContext({ foo: 'bar' });
+        const original = qb().queryContext({ foo: 'foo' });
+        const clone = original.clone().queryContext({ foo: 'bar' });
         expect(original.queryContext()).to.deep.equal({ foo: 'foo' });
         expect(clone.queryContext()).to.deep.equal({ foo: 'bar' });
       });
 
       it('should only shallow clone the query context', () => {
-        var original = qb().queryContext({ foo: { bar: 'baz' } });
-        var clone = original.clone();
+        const original = qb().queryContext({ foo: { bar: 'baz' } });
+        const clone = original.clone();
         clone.queryContext().foo.bar = 'quux';
         expect(original.queryContext()).to.deep.equal({ foo: { bar: 'quux' } });
         expect(clone.queryContext()).to.deep.equal({ foo: { bar: 'quux' } });
@@ -368,8 +368,8 @@ describe('Custom identifier wrapping', function() {
   });
 });
 
-describe('QueryBuilder', function() {
-  it('basic select', function() {
+describe('QueryBuilder', () => {
+  it('basic select', () => {
     testsql(
       qb()
         .select('*')
@@ -383,7 +383,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('adding selects', function() {
+  it('adding selects', () => {
     testsql(
       qb()
         .select('foo')
@@ -399,7 +399,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('basic select distinct', function() {
+  it('basic select distinct', () => {
     testsql(
       qb()
         .distinct()
@@ -422,7 +422,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('basic select with alias as property-value pairs', function() {
+  it('basic select with alias as property-value pairs', () => {
     testsql(
       qb()
         .select({ bar: 'foo' })
@@ -436,7 +436,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('basic select with mixed pure column and alias pair', function() {
+  it('basic select with mixed pure column and alias pair', () => {
     testsql(
       qb()
         .select('baz', { bar: 'foo' })
@@ -450,7 +450,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('basic select with array-wrapped alias pair', function() {
+  it('basic select with array-wrapped alias pair', () => {
     testsql(
       qb()
         .select(['baz', { bar: 'foo' }])
@@ -464,7 +464,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('basic select with mixed pure column and alias pair', function() {
+  it('basic select with mixed pure column and alias pair', () => {
     testsql(
       qb()
         .select({ bar: 'foo' })
@@ -478,7 +478,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('basic old-style alias', function() {
+  it('basic old-style alias', () => {
     testsql(
       qb()
         .select('foo as bar')
@@ -493,7 +493,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('basic alias trims spaces', function() {
+  it('basic alias trims spaces', () => {
     testsql(
       qb()
         .select(' foo   as bar ')
@@ -508,7 +508,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('allows for case-insensitive alias', function() {
+  it('allows for case-insensitive alias', () => {
     testsql(
       qb()
         .select(' foo   aS bar ')
@@ -523,7 +523,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('allows alias with dots in the identifier name', function() {
+  it('allows alias with dots in the identifier name', () => {
     testsql(
       qb()
         .select('foo as bar.baz')
@@ -569,7 +569,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('basic table wrapping', function() {
+  it('basic table wrapping', () => {
     testsql(
       qb()
         .select('*')
@@ -583,7 +583,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('basic table wrapping with declared schema', function() {
+  it('basic table wrapping with declared schema', () => {
     testsql(
       qb()
         .withSchema('myschema')
@@ -598,7 +598,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('selects from only', function() {
+  it('selects from only', () => {
     testsql(
       qb()
         .select('*')
@@ -609,7 +609,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('clear a select', function() {
+  it('clear a select', () => {
     testsql(
       qb()
         .select('id', 'email')
@@ -654,7 +654,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('clear a where', function() {
+  it('clear a where', () => {
     testsql(
       qb()
         .select('id')
@@ -705,7 +705,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('clear an order', function() {
+  it('clear an order', () => {
     testsql(
       qb()
         .table('users')
@@ -788,7 +788,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('clear a having', function() {
+  it('clear a having', () => {
     testsql(
       qb()
         .table('users')
@@ -816,7 +816,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('basic wheres', function() {
+  it('basic wheres', () => {
     testsql(
       qb()
         .select('*')
@@ -872,7 +872,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('where not', function() {
+  it('where not', () => {
     testsql(
       qb()
         .select('*')
@@ -912,7 +912,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('grouped or where not', function() {
+  it('grouped or where not', () => {
     testsql(
       qb()
         .select('*')
@@ -957,7 +957,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('grouped or where not alternate', function() {
+  it('grouped or where not alternate', () => {
     testsql(
       qb()
         .select('*')
@@ -1001,7 +1001,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('where not object', function() {
+  it('where not object', () => {
     testsql(
       qb()
         .select('*')
@@ -1049,7 +1049,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('where bool', function() {
+  it('where bool', () => {
     testquery(
       qb()
         .select('*')
@@ -1064,7 +1064,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('where betweens', function() {
+  it('where betweens', () => {
     testsql(
       qb()
         .select('*')
@@ -1091,7 +1091,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('and where betweens', function() {
+  it('and where betweens', () => {
     testsql(
       qb()
         .select('*')
@@ -1123,7 +1123,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('and where not betweens', function() {
+  it('and where not betweens', () => {
     testsql(
       qb()
         .select('*')
@@ -1155,7 +1155,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('where betweens, alternate', function() {
+  it('where betweens, alternate', () => {
     testsql(
       qb()
         .select('*')
@@ -1182,7 +1182,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('where not between', function() {
+  it('where not between', () => {
     testsql(
       qb()
         .select('*')
@@ -1209,7 +1209,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('where not between, alternate', function() {
+  it('where not between, alternate', () => {
     testsql(
       qb()
         .select('*')
@@ -1236,7 +1236,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('basic or wheres', function() {
+  it('basic or wheres', () => {
     testsql(
       qb()
         .select('*')
@@ -1264,7 +1264,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('chained or wheres', function() {
+  it('chained or wheres', () => {
     testsql(
       qb()
         .select('*')
@@ -1292,7 +1292,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('raw column wheres', function() {
+  it('raw column wheres', () => {
     testsql(
       qb()
         .select('*')
@@ -1319,7 +1319,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('raw wheres', function() {
+  it('raw wheres', () => {
     testsql(
       qb()
         .select('*')
@@ -1346,7 +1346,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('raw or wheres', function() {
+  it('raw or wheres', () => {
     testsql(
       qb()
         .select('*')
@@ -1374,7 +1374,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('chained raw or wheres', function() {
+  it('chained raw or wheres', () => {
     testsql(
       qb()
         .select('*')
@@ -1402,7 +1402,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('basic where ins', function() {
+  it('basic where ins', () => {
     testsql(
       qb()
         .select('*')
@@ -1429,7 +1429,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('multi column where ins', function() {
+  it('multi column where ins', () => {
     testsql(
       qb()
         .select('*')
@@ -1461,11 +1461,16 @@ describe('QueryBuilder', function() {
             'select * from "users" where ("a", "b") in ((?, ?), (?, ?), (?, ?))',
           bindings: [1, 2, 3, 4, 5, 6],
         },
+        sqlite3: {
+          sql:
+            'select * from `users` where (`a`, `b`) in ( values (?, ?), (?, ?), (?, ?))',
+          bindings: [1, 2, 3, 4, 5, 6],
+        },
       }
     );
   });
 
-  it('orWhereIn', function() {
+  it('orWhereIn', () => {
     testsql(
       qb()
         .select('*')
@@ -1493,7 +1498,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('basic where not ins', function() {
+  it('basic where not ins', () => {
     testsql(
       qb()
         .select('*')
@@ -1520,7 +1525,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('chained or where not in', function() {
+  it('chained or where not in', () => {
     testsql(
       qb()
         .select('*')
@@ -1548,7 +1553,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('or.whereIn', function() {
+  it('or.whereIn', () => {
     testsql(
       qb()
         .select('*')
@@ -1576,7 +1581,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('chained basic where not ins', function() {
+  it('chained basic where not ins', () => {
     testsql(
       qb()
         .select('*')
@@ -1603,7 +1608,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('chained or where not in', function() {
+  it('chained or where not in', () => {
     testsql(
       qb()
         .select('*')
@@ -1631,7 +1636,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('whereIn with empty array, #477', function() {
+  it('whereIn with empty array, #477', () => {
     testsql(
       qb()
         .select('*')
@@ -1662,7 +1667,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('whereNotIn with empty array, #477', function() {
+  it('whereNotIn with empty array, #477', () => {
     testsql(
       qb()
         .select('*')
@@ -1693,8 +1698,8 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('should allow a function as the first argument, for a grouped where clause', function() {
-    var partial = qb()
+  it('should allow a function as the first argument, for a grouped where clause', () => {
+    const partial = qb()
       .table('test')
       .where('id', '=', 1);
     testsql(partial, {
@@ -1703,7 +1708,7 @@ describe('QueryBuilder', function() {
       pg: 'select * from "test" where "id" = ?',
     });
 
-    var subWhere = function(sql) {
+    const subWhere = function(sql) {
       expect(this).to.equal(sql);
       this.where({ id: 3 }).orWhere('id', 4);
     };
@@ -1728,8 +1733,8 @@ describe('QueryBuilder', function() {
     });
   });
 
-  it('should accept a function as the "value", for a sub select', function() {
-    var chain = qb().where('id', '=', function(qb) {
+  it('should accept a function as the "value", for a sub select', () => {
+    const chain = qb().where('id', '=', function(qb) {
       expect(this).to.equal(qb);
       this.select('account_id')
         .from('names')
@@ -1778,8 +1783,8 @@ describe('QueryBuilder', function() {
     });
   });
 
-  it('should accept a function as the "value", for a sub select when chained', function() {
-    var chain = qb().where('id', '=', function(qb) {
+  it('should accept a function as the "value", for a sub select when chained', () => {
+    const chain = qb().where('id', '=', function(qb) {
       expect(this).to.equal(qb);
       this.select('account_id')
         .from('names')
@@ -1817,7 +1822,7 @@ describe('QueryBuilder', function() {
     });
   });
 
-  it('should not do whereNull on where("foo", "<>", null) #76', function() {
+  it('should not do whereNull on where("foo", "<>", null) #76', () => {
     testquery(qb().where('foo', '<>', null), {
       mysql: 'select * where `foo` <> NULL',
       mssql: 'select * where [foo] <> NULL',
@@ -1825,7 +1830,7 @@ describe('QueryBuilder', function() {
     });
   });
 
-  it('should expand where("foo", "!=") to - where id = "!="', function() {
+  it('should expand where("foo", "!=") to - where id = "!="', () => {
     testquery(qb().where('foo', '!='), {
       mysql: "select * where `foo` = '!='",
       mssql: "select * where [foo] = '!='",
@@ -1833,8 +1838,8 @@ describe('QueryBuilder', function() {
     });
   });
 
-  it('unions', function() {
-    var chain = qb()
+  it('unions', () => {
+    const chain = qb()
       .select('*')
       .from('users')
       .where('id', '=', 1)
@@ -1866,7 +1871,7 @@ describe('QueryBuilder', function() {
       },
     });
 
-    var multipleArgumentsChain = qb()
+    const multipleArgumentsChain = qb()
       .select('*')
       .from('users')
       .where({ id: 1 })
@@ -1905,7 +1910,7 @@ describe('QueryBuilder', function() {
       },
     });
 
-    var arrayChain = qb()
+    const arrayChain = qb()
       .select('*')
       .from('users')
       .where({ id: 1 })
@@ -1945,8 +1950,8 @@ describe('QueryBuilder', function() {
     });
   });
 
-  it('wraps unions', function() {
-    var wrappedChain = qb()
+  it('wraps unions', () => {
+    const wrappedChain = qb()
       .select('*')
       .from('users')
       .where('id', 'in', function() {
@@ -1980,7 +1985,7 @@ describe('QueryBuilder', function() {
     });
 
     // worthwhile since we're playing games with the 'wrap' specification with arguments
-    var multipleArgumentsWrappedChain = qb()
+    const multipleArgumentsWrappedChain = qb()
       .select('*')
       .from('users')
       .where({ id: 1 })
@@ -2020,7 +2025,7 @@ describe('QueryBuilder', function() {
       },
     });
 
-    var arrayWrappedChain = qb()
+    const arrayWrappedChain = qb()
       .select('*')
       .from('users')
       .where({ id: 1 })
@@ -2063,8 +2068,8 @@ describe('QueryBuilder', function() {
     });
   });
 
-  it('wraps union alls', function() {
-    var wrappedChain = qb()
+  it('wraps union alls', () => {
+    const wrappedChain = qb()
       .select('*')
       .from('users')
       .where('id', 'in', function() {
@@ -2098,7 +2103,7 @@ describe('QueryBuilder', function() {
     });
 
     // worthwhile since we're playing games with the 'wrap' specification with arguments
-    var multipleArgumentsWrappedChain = qb()
+    const multipleArgumentsWrappedChain = qb()
       .select('*')
       .from('users')
       .where({ id: 1 })
@@ -2138,7 +2143,7 @@ describe('QueryBuilder', function() {
       },
     });
 
-    var arrayWrappedChain = qb()
+    const arrayWrappedChain = qb()
       .select('*')
       .from('users')
       .where({ id: 1 })
@@ -2190,8 +2195,8 @@ describe('QueryBuilder', function() {
   //   expect(chain.bindings).to.eql([1, 2, 10]);
   // });
 
-  it('union alls', function() {
-    var chain = qb()
+  it('union alls', () => {
+    const chain = qb()
       .select('*')
       .from('users')
       .where('id', '=', 1)
@@ -2223,7 +2228,7 @@ describe('QueryBuilder', function() {
       },
     });
 
-    var multipleArgumentsChain = qb()
+    const multipleArgumentsChain = qb()
       .select('*')
       .from('users')
       .where({ id: 1 })
@@ -2262,7 +2267,7 @@ describe('QueryBuilder', function() {
       },
     });
 
-    var arrayChain = qb()
+    const arrayChain = qb()
       .select('*')
       .from('users')
       .where({ id: 1 })
@@ -2302,8 +2307,8 @@ describe('QueryBuilder', function() {
     });
   });
 
-  it('multiple unions', function() {
-    var chain = qb()
+  it('multiple unions', () => {
+    const chain = qb()
       .select('*')
       .from('users')
       .where('id', '=', 1)
@@ -2341,7 +2346,7 @@ describe('QueryBuilder', function() {
       },
     });
 
-    var arrayChain = qb()
+    const arrayChain = qb()
       .select('*')
       .from('users')
       .where({ id: 1 })
@@ -2375,7 +2380,7 @@ describe('QueryBuilder', function() {
       },
     });
 
-    var multipleArgumentsChain = qb()
+    const multipleArgumentsChain = qb()
       .select('*')
       .from('users')
       .where({ id: 1 })
@@ -2410,8 +2415,8 @@ describe('QueryBuilder', function() {
     });
   });
 
-  it('multiple union alls', function() {
-    var chain = qb()
+  it('multiple union alls', () => {
+    const chain = qb()
       .select('*')
       .from('users')
       .where('id', '=', 1)
@@ -2451,7 +2456,7 @@ describe('QueryBuilder', function() {
       },
     });
 
-    var arrayChain = qb()
+    const arrayChain = qb()
       .select('*')
       .from('users')
       .where({ id: 1 })
@@ -2485,7 +2490,7 @@ describe('QueryBuilder', function() {
       },
     });
 
-    var multipleArgumentsChain = qb()
+    const multipleArgumentsChain = qb()
       .select('*')
       .from('users')
       .where({ id: 1 })
@@ -2520,7 +2525,7 @@ describe('QueryBuilder', function() {
     });
   });
 
-  it('intersects', function() {
+  it('intersects', () => {
     const chain = qb()
       .select('*')
       .from('users')
@@ -2603,7 +2608,7 @@ describe('QueryBuilder', function() {
       },
     });
 
-    var arrayChain = qb()
+    const arrayChain = qb()
       .select('*')
       .from('users')
       .where({ id: 1 })
@@ -2648,8 +2653,8 @@ describe('QueryBuilder', function() {
     });
   });
 
-  it('wraps intersects', function() {
-    var wrappedChain = qb()
+  it('wraps intersects', () => {
+    const wrappedChain = qb()
       .select('*')
       .from('users')
       .where('id', 'in', function() {
@@ -2678,7 +2683,7 @@ describe('QueryBuilder', function() {
     });
 
     // worthwhile since we're playing games with the 'wrap' specification with arguments
-    var multipleArgumentsWrappedChain = qb()
+    const multipleArgumentsWrappedChain = qb()
       .select('*')
       .from('users')
       .where({ id: 1 })
@@ -2713,7 +2718,7 @@ describe('QueryBuilder', function() {
       },
     });
 
-    var arrayWrappedChain = qb()
+    const arrayWrappedChain = qb()
       .select('*')
       .from('users')
       .where({ id: 1 })
@@ -2751,8 +2756,8 @@ describe('QueryBuilder', function() {
     });
   });
 
-  it('multiple intersects', function() {
-    var chain = qb()
+  it('multiple intersects', () => {
+    const chain = qb()
       .select('*')
       .from('users')
       .where('id', '=', 1)
@@ -2785,7 +2790,7 @@ describe('QueryBuilder', function() {
       },
     });
 
-    var arrayChain = qb()
+    const arrayChain = qb()
       .select('*')
       .from('users')
       .where({ id: 1 })
@@ -2814,7 +2819,7 @@ describe('QueryBuilder', function() {
       },
     });
 
-    var multipleArgumentsChain = qb()
+    const multipleArgumentsChain = qb()
       .select('*')
       .from('users')
       .where({ id: 1 })
@@ -2844,12 +2849,12 @@ describe('QueryBuilder', function() {
     });
   });
 
-  it('sub select where ins', function() {
+  it('sub select where ins', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
-        .whereIn('id', function(qb) {
+        .whereIn('id', (qb) => {
           qb.select('id')
             .from('users')
             .where('age', '>', 25)
@@ -2885,12 +2890,12 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('sub select multi column where ins', function() {
+  it('sub select multi column where ins', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
-        .whereIn(['id_a', 'id_b'], function(qb) {
+        .whereIn(['id_a', 'id_b'], (qb) => {
           qb.select('id_a', 'id_b')
             .from('users')
             .where('age', '>', 25)
@@ -2926,12 +2931,12 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('sub select where not ins', function() {
+  it('sub select where not ins', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
-        .whereNotIn('id', function(qb) {
+        .whereNotIn('id', (qb) => {
           qb.select('id')
             .from('users')
             .where('age', '>', 25);
@@ -2961,7 +2966,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('basic where nulls', function() {
+  it('basic where nulls', () => {
     testsql(
       qb()
         .select('*')
@@ -2988,7 +2993,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('basic or where nulls', function() {
+  it('basic or where nulls', () => {
     testsql(
       qb()
         .select('*')
@@ -3016,7 +3021,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('basic where not nulls', function() {
+  it('basic where not nulls', () => {
     testsql(
       qb()
         .select('*')
@@ -3043,7 +3048,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('basic or where not nulls', function() {
+  it('basic or where not nulls', () => {
     testsql(
       qb()
         .select('*')
@@ -3071,7 +3076,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('group bys', function() {
+  it('group bys', () => {
     testsql(
       qb()
         .select('*')
@@ -3098,7 +3103,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('order bys', function() {
+  it('order bys', () => {
     testsql(
       qb()
         .select('*')
@@ -3126,7 +3131,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('order by array', function() {
+  it('order by array', () => {
     testsql(
       qb()
         .select('*')
@@ -3153,7 +3158,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('order by array without order', function() {
+  it('order by array without order', () => {
     testsql(
       qb()
         .select('*')
@@ -3180,7 +3185,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('raw group bys', function() {
+  it('raw group bys', () => {
     testsql(
       qb()
         .select('*')
@@ -3207,7 +3212,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('raw order bys with default direction', function() {
+  it('raw order bys with default direction', () => {
     testsql(
       qb()
         .select('*')
@@ -3234,7 +3239,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('raw order bys with specified direction', function() {
+  it('raw order bys with specified direction', () => {
     testsql(
       qb()
         .select('*')
@@ -3261,7 +3266,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('orderByRaw', function() {
+  it('orderByRaw', () => {
     testsql(
       qb()
         .select('*')
@@ -3288,7 +3293,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('orderByRaw second argument is the binding', function() {
+  it('orderByRaw second argument is the binding', () => {
     testsql(
       qb()
         .select('*')
@@ -3315,7 +3320,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('multiple order bys', function() {
+  it('multiple order bys', () => {
     testsql(
       qb()
         .select('*')
@@ -3343,7 +3348,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('havings', function() {
+  it('havings', () => {
     testsql(
       qb()
         .select('*')
@@ -3359,7 +3364,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('or having', function() {
+  it('or having', () => {
     testsql(
       qb()
         .select('*')
@@ -3376,7 +3381,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('nested having', function() {
+  it('nested having', () => {
     testsql(
       qb()
         .select('*')
@@ -3394,7 +3399,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('nested or havings', function() {
+  it('nested or havings', () => {
     testsql(
       qb()
         .select('*')
@@ -3414,7 +3419,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('grouped having', function() {
+  it('grouped having', () => {
     testsql(
       qb()
         .select('*')
@@ -3432,7 +3437,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('having from', function() {
+  it('having from', () => {
     testsql(
       qb()
         .select('email as foo_email')
@@ -3450,7 +3455,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('raw havings', function() {
+  it('raw havings', () => {
     testsql(
       qb()
         .select('*')
@@ -3466,7 +3471,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('raw or havings', function() {
+  it('raw or havings', () => {
     testsql(
       qb()
         .select('*')
@@ -3485,7 +3490,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('having null', function() {
+  it('having null', () => {
     testsql(
       qb()
         .select('*')
@@ -3501,7 +3506,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('or having null', function() {
+  it('or having null', () => {
     testsql(
       qb()
         .select('*')
@@ -3519,7 +3524,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('having not null', function() {
+  it('having not null', () => {
     testsql(
       qb()
         .select('*')
@@ -3535,7 +3540,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('or having not null', function() {
+  it('or having not null', () => {
     testsql(
       qb()
         .select('*')
@@ -3557,7 +3562,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('having exists', function() {
+  it('having exists', () => {
     testsql(
       qb()
         .select('*')
@@ -3579,7 +3584,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('or having exists', function() {
+  it('or having exists', () => {
     testsql(
       qb()
         .select('*')
@@ -3605,7 +3610,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('having not exists', function() {
+  it('having not exists', () => {
     testsql(
       qb()
         .select('*')
@@ -3628,7 +3633,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('or having not exists', function() {
+  it('or having not exists', () => {
     testsql(
       qb()
         .select('*')
@@ -3654,7 +3659,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('having between', function() {
+  it('having between', () => {
     testsql(
       qb()
         .select('*')
@@ -3670,7 +3675,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('or having between', function() {
+  it('or having between', () => {
     testsql(
       qb()
         .select('*')
@@ -3692,7 +3697,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('having not between', function() {
+  it('having not between', () => {
     testsql(
       qb()
         .select('*')
@@ -3708,7 +3713,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('or having not between', function() {
+  it('or having not between', () => {
     testsql(
       qb()
         .select('*')
@@ -3730,7 +3735,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('having in', function() {
+  it('having in', () => {
     testsql(
       qb()
         .select('*')
@@ -3746,7 +3751,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('or having in', function() {
+  it('or having in', () => {
     testsql(
       qb()
         .select('*')
@@ -3768,7 +3773,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('having not in', function() {
+  it('having not in', () => {
     testsql(
       qb()
         .select('*')
@@ -3784,7 +3789,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('or having not in', function() {
+  it('or having not in', () => {
     testsql(
       qb()
         .select('*')
@@ -3806,7 +3811,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('limits', function() {
+  it('limits', () => {
     testsql(
       qb()
         .select('*')
@@ -3837,7 +3842,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('can limit 0', function() {
+  it('can limit 0', () => {
     testsql(
       qb()
         .select('*')
@@ -3868,7 +3873,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('limits and offsets', function() {
+  it('limits and offsets', () => {
     testsql(
       qb()
         .select('*')
@@ -3901,7 +3906,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('limits and raw selects', function() {
+  it('limits and raw selects', () => {
     testsql(
       qb()
         .select(raw('name = ? as isJohn', ['john']))
@@ -3933,7 +3938,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('first', function() {
+  it('first', () => {
     testsql(
       qb()
         .first('*')
@@ -3963,7 +3968,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('offsets only', function() {
+  it('offsets only', () => {
     testsql(
       qb()
         .select('*')
@@ -3999,7 +4004,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('where shortcut', function() {
+  it('where shortcut', () => {
     testsql(
       qb()
         .select('*')
@@ -4027,13 +4032,13 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('nested wheres', function() {
+  it('nested wheres', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
         .where('email', '=', 'foo')
-        .orWhere(function(qb) {
+        .orWhere((qb) => {
           qb.where('name', '=', 'bar').where('age', '=', 25);
         }),
       {
@@ -4061,13 +4066,13 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('clear nested wheres', function() {
+  it('clear nested wheres', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
         .where('email', '=', 'foo')
-        .orWhere(function(qb) {
+        .orWhere((qb) => {
           qb.where('name', '=', 'bar')
             .where('age', '=', 25)
             .clearWhere();
@@ -4093,13 +4098,13 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('clear where and nested wheres', function() {
+  it('clear where and nested wheres', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
         .where('email', '=', 'foo')
-        .orWhere(function(qb) {
+        .orWhere((qb) => {
           qb.where('name', '=', 'bar').where('age', '=', 25);
         })
         .clearWhere(),
@@ -4120,13 +4125,13 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('full sub selects', function() {
+  it('full sub selects', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
         .where('email', '=', 'foo')
-        .orWhere('id', '=', function(qb) {
+        .orWhere('id', '=', (qb) => {
           qb.select(raw('max(id)'))
             .from('users')
             .where('email', '=', 'bar');
@@ -4156,13 +4161,13 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('clear nested selects', function() {
+  it('clear nested selects', () => {
     testsql(
       qb()
         .select('email')
         .from('users')
         .where('email', '=', 'foo')
-        .orWhere('id', '=', function(qb) {
+        .orWhere('id', '=', (qb) => {
           qb.select(raw('max(id)'))
             .from('users')
             .where('email', '=', 'bar')
@@ -4193,13 +4198,13 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('clear non nested selects', function() {
+  it('clear non nested selects', () => {
     testsql(
       qb()
         .select('email')
         .from('users')
         .where('email', '=', 'foo')
-        .orWhere('id', '=', function(qb) {
+        .orWhere('id', '=', (qb) => {
           qb.select(raw('max(id)'))
             .from('users')
             .where('email', '=', 'bar');
@@ -4230,12 +4235,12 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('where exists', function() {
+  it('where exists', () => {
     testsql(
       qb()
         .select('*')
         .from('orders')
-        .whereExists(function(qb) {
+        .whereExists((qb) => {
           qb.select('*')
             .from('products')
             .where('products.id', '=', raw('"orders"."id"'));
@@ -4265,7 +4270,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('where exists with builder', function() {
+  it('where exists with builder', () => {
     testsql(
       qb()
         .select('*')
@@ -4301,12 +4306,12 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('where not exists', function() {
+  it('where not exists', () => {
     testsql(
       qb()
         .select('*')
         .from('orders')
-        .whereNotExists(function(qb) {
+        .whereNotExists((qb) => {
           qb.select('*')
             .from('products')
             .where('products.id', '=', raw('"orders"."id"'));
@@ -4336,13 +4341,13 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('or where exists', function() {
+  it('or where exists', () => {
     testsql(
       qb()
         .select('*')
         .from('orders')
         .where('id', '=', 1)
-        .orWhereExists(function(qb) {
+        .orWhereExists((qb) => {
           qb.select('*')
             .from('products')
             .where('products.id', '=', raw('"orders"."id"'));
@@ -4372,13 +4377,13 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('or where not exists', function() {
+  it('or where not exists', () => {
     testsql(
       qb()
         .select('*')
         .from('orders')
         .where('id', '=', 1)
-        .orWhereNotExists(function(qb) {
+        .orWhereNotExists((qb) => {
           qb.select('*')
             .from('products')
             .where('products.id', '=', raw('"orders"."id"'));
@@ -4408,7 +4413,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('cross join', function() {
+  it('cross join', () => {
     testsql(
       qb()
         .select('*')
@@ -4450,7 +4455,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('full outer join', function() {
+  it('full outer join', () => {
     testsql(
       qb()
         .select('*')
@@ -4481,7 +4486,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('cross join on', function() {
+  it('cross join on', () => {
     testsql(
       qb()
         .select('*')
@@ -4502,7 +4507,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('basic joins', function() {
+  it('basic joins', () => {
     testsql(
       qb()
         .select('*')
@@ -4534,7 +4539,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('right (outer) joins', function() {
+  it('right (outer) joins', () => {
     testsql(
       qb()
         .select('*')
@@ -4571,12 +4576,12 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('complex join', function() {
+  it('complex join', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
-        .join('contacts', function(qb) {
+        .join('contacts', (qb) => {
           qb.on('users.id', '=', 'contacts.id').orOn(
             'users.name',
             '=',
@@ -4608,13 +4613,13 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('complex join with nest conditional statements', function() {
+  it('complex join with nest conditional statements', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
-        .join('contacts', function(qb) {
-          qb.on(function(qb) {
+        .join('contacts', (qb) => {
+          qb.on((qb) => {
             qb.on('users.id', '=', 'contacts.id');
             qb.orOn('users.name', '=', 'contacts.name');
           });
@@ -4644,12 +4649,12 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('complex join with empty in', function() {
+  it('complex join with empty in', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
-        .join('contacts', function(qb) {
+        .join('contacts', (qb) => {
           qb.on('users.id', '=', 'contacts.id').onIn('users.name', []);
         }),
       {
@@ -4677,7 +4682,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('joins with raw', function() {
+  it('joins with raw', () => {
     testsql(
       qb()
         .select('*')
@@ -4709,7 +4714,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('joins with schema', function() {
+  it('joins with schema', () => {
     testsql(
       qb()
         .withSchema('myschema')
@@ -4742,12 +4747,12 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('on null', function() {
+  it('on null', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
-        .join('contacts', function(qb) {
+        .join('contacts', (qb) => {
           qb.on('users.id', '=', 'contacts.id').onNull('contacts.address');
         }),
       {
@@ -4765,12 +4770,12 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('or on null', function() {
+  it('or on null', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
-        .join('contacts', function(qb) {
+        .join('contacts', (qb) => {
           qb.on('users.id', '=', 'contacts.id')
             .onNull('contacts.address')
             .orOnNull('contacts.phone');
@@ -4790,12 +4795,12 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('on not null', function() {
+  it('on not null', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
-        .join('contacts', function(qb) {
+        .join('contacts', (qb) => {
           qb.on('users.id', '=', 'contacts.id').onNotNull('contacts.address');
         }),
       {
@@ -4813,12 +4818,12 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('or on not null', function() {
+  it('or on not null', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
-        .join('contacts', function(qb) {
+        .join('contacts', (qb) => {
           qb.on('users.id', '=', 'contacts.id')
             .onNotNull('contacts.address')
             .orOnNotNull('contacts.phone');
@@ -4838,12 +4843,12 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('on exists', function() {
+  it('on exists', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
-        .join('contacts', function(qb) {
+        .join('contacts', (qb) => {
           qb.on('users.id', '=', 'contacts.id').onExists(function() {
             this.select('*').from('foo');
           });
@@ -4863,12 +4868,12 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('or on exists', function() {
+  it('or on exists', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
-        .join('contacts', function(qb) {
+        .join('contacts', (qb) => {
           qb.on('users.id', '=', 'contacts.id')
             .onExists(function() {
               this.select('*').from('foo');
@@ -4892,12 +4897,12 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('on not exists', function() {
+  it('on not exists', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
-        .join('contacts', function(qb) {
+        .join('contacts', (qb) => {
           qb.on('users.id', '=', 'contacts.id').onNotExists(function() {
             this.select('*').from('foo');
           });
@@ -4917,12 +4922,12 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('or on not exists', function() {
+  it('or on not exists', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
-        .join('contacts', function(qb) {
+        .join('contacts', (qb) => {
           qb.on('users.id', '=', 'contacts.id')
             .onNotExists(function() {
               this.select('*').from('foo');
@@ -4946,12 +4951,12 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('on between', function() {
+  it('on between', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
-        .join('contacts', function(qb) {
+        .join('contacts', (qb) => {
           qb.on('users.id', '=', 'contacts.id').onBetween('contacts.id', [
             7,
             15,
@@ -4972,12 +4977,12 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('or on between', function() {
+  it('or on between', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
-        .join('contacts', function(qb) {
+        .join('contacts', (qb) => {
           qb.on('users.id', '=', 'contacts.id')
             .onBetween('contacts.id', [7, 15])
             .orOnBetween('users.id', [9, 14]);
@@ -4997,12 +5002,12 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('on not between', function() {
+  it('on not between', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
-        .join('contacts', function(qb) {
+        .join('contacts', (qb) => {
           qb.on('users.id', '=', 'contacts.id').onNotBetween('contacts.id', [
             7,
             15,
@@ -5023,12 +5028,12 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('or on not between', function() {
+  it('or on not between', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
-        .join('contacts', function(qb) {
+        .join('contacts', (qb) => {
           qb.on('users.id', '=', 'contacts.id')
             .onNotBetween('contacts.id', [7, 15])
             .orOnNotBetween('users.id', [9, 14]);
@@ -5048,12 +5053,12 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('on in', function() {
+  it('on in', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
-        .join('contacts', function(qb) {
+        .join('contacts', (qb) => {
           qb.on('users.id', '=', 'contacts.id').onIn('contacts.id', [
             7,
             15,
@@ -5076,12 +5081,12 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('or on in', function() {
+  it('or on in', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
-        .join('contacts', function(qb) {
+        .join('contacts', (qb) => {
           qb.on('users.id', '=', 'contacts.id')
             .onIn('contacts.id', [7, 15, 23, 41])
             .orOnIn('users.id', [21, 37]);
@@ -5101,12 +5106,12 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('on not in', function() {
+  it('on not in', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
-        .join('contacts', function(qb) {
+        .join('contacts', (qb) => {
           qb.on('users.id', '=', 'contacts.id').onNotIn('contacts.id', [
             7,
             15,
@@ -5129,12 +5134,12 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('or on not in', function() {
+  it('or on not in', () => {
     testsql(
       qb()
         .select('*')
         .from('users')
-        .join('contacts', function(qb) {
+        .join('contacts', (qb) => {
           qb.on('users.id', '=', 'contacts.id')
             .onNotIn('contacts.id', [7, 15, 23, 41])
             .orOnNotIn('users.id', [21, 37]);
@@ -5154,7 +5159,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('raw expressions in select', function() {
+  it('raw expressions in select', () => {
     testsql(
       qb()
         .select(raw('substr(foo, 6)'))
@@ -5180,7 +5185,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('count', function() {
+  it('count', () => {
     testsql(
       qb()
         .from('users')
@@ -5206,7 +5211,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('count distinct', function() {
+  it('count distinct', () => {
     testsql(
       qb()
         .from('users')
@@ -5232,7 +5237,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('count with string alias', function() {
+  it('count with string alias', () => {
     testsql(
       qb()
         .from('users')
@@ -5262,7 +5267,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('count with object alias', function() {
+  it('count with object alias', () => {
     testsql(
       qb()
         .from('users')
@@ -5292,7 +5297,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('count distinct with string alias', function() {
+  it('count distinct with string alias', () => {
     testsql(
       qb()
         .from('users')
@@ -5322,7 +5327,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('count distinct with object alias', function() {
+  it('count distinct with object alias', () => {
     testsql(
       qb()
         .from('users')
@@ -5352,7 +5357,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('count with raw values', function() {
+  it('count with raw values', () => {
     testsql(
       qb()
         .from('users')
@@ -5374,7 +5379,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('count distinct with raw values', function() {
+  it('count distinct with raw values', () => {
     testsql(
       qb()
         .from('users')
@@ -5396,7 +5401,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('count distinct with multiple columns', function() {
+  it('count distinct with multiple columns', () => {
     testsql(
       qb()
         .from('users')
@@ -5422,7 +5427,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('count distinct with multiple columns with alias', function() {
+  it('count distinct with multiple columns with alias', () => {
     testsql(
       qb()
         .from('users')
@@ -5448,7 +5453,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('max', function() {
+  it('max', () => {
     testsql(
       qb()
         .from('users')
@@ -5474,7 +5479,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('max with raw values', function() {
+  it('max with raw values', () => {
     testsql(
       qb()
         .from('users')
@@ -5496,7 +5501,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('min', function() {
+  it('min', () => {
     testsql(
       qb()
         .from('users')
@@ -5522,7 +5527,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('min with raw values', function() {
+  it('min with raw values', () => {
     testsql(
       qb()
         .from('users')
@@ -5544,7 +5549,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('sum', function() {
+  it('sum', () => {
     testsql(
       qb()
         .from('users')
@@ -5570,7 +5575,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('sum with raw values', function() {
+  it('sum with raw values', () => {
     testsql(
       qb()
         .from('users')
@@ -5592,7 +5597,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('sum distinct', function() {
+  it('sum distinct', () => {
     testsql(
       qb()
         .from('users')
@@ -5618,7 +5623,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('sum distinct with raw values', function() {
+  it('sum distinct with raw values', () => {
     testsql(
       qb()
         .from('users')
@@ -5640,7 +5645,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('avg', function() {
+  it('avg', () => {
     testsql(
       qb()
         .from('users')
@@ -5662,7 +5667,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('avg with raw values', function() {
+  it('avg with raw values', () => {
     testsql(
       qb()
         .from('users')
@@ -5684,7 +5689,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('avg distinct with raw values', function() {
+  it('avg distinct with raw values', () => {
     testsql(
       qb()
         .from('users')
@@ -5706,7 +5711,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('insert method', function() {
+  it('insert method', () => {
     testsql(
       qb()
         .into('users')
@@ -5732,7 +5737,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('multiple inserts', function() {
+  it('multiple inserts', () => {
     testsql(
       qb()
         .from('users')
@@ -5771,7 +5776,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('multiple inserts with partly undefined keys client with configuration nullAsDefault: true', function() {
+  it('multiple inserts with partly undefined keys client with configuration nullAsDefault: true', () => {
     testquery(
       qb()
         .from('users')
@@ -5794,7 +5799,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('multiple inserts with partly undefined keys', function() {
+  it('multiple inserts with partly undefined keys', () => {
     testquery(
       qb()
         .from('users')
@@ -5814,8 +5819,8 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('multiple inserts with partly undefined keys throw error with sqlite', function() {
-    expect(function() {
+  it('multiple inserts with partly undefined keys throw error with sqlite', () => {
+    expect(() => {
       testquery(
         qb()
           .from('users')
@@ -5827,7 +5832,7 @@ describe('QueryBuilder', function() {
     }).to.throw(TypeError);
   });
 
-  it('multiple inserts with returning', function() {
+  it('multiple inserts with returning', () => {
     // returning only supported directly by postgres and with workaround with oracle
     // other databases implicitly return the inserted id
     testsql(
@@ -5863,7 +5868,7 @@ describe('QueryBuilder', function() {
         oracledb: {
           sql:
             'begin execute immediate \'insert into "users" ("email", "name") values (:1, :2) returning "id" into :3\' using ?, ?, out ?; execute immediate \'insert into "users" ("email", "name") values (:1, :2) returning "id" into :3\' using ?, ?, out ?;end;',
-          bindings: function(bindings) {
+          bindings: (bindings) => {
             expect(bindings.length).to.equal(6);
             expect(bindings[0]).to.equal('foo');
             expect(bindings[1]).to.equal('taylor');
@@ -5881,7 +5886,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('multiple inserts with multiple returning', function() {
+  it('multiple inserts with multiple returning', () => {
     testsql(
       qb()
         .from('users')
@@ -5916,7 +5921,7 @@ describe('QueryBuilder', function() {
         oracledb: {
           sql:
             'begin execute immediate \'insert into "users" ("email", "name") values (:1, :2) returning "id","name" into :3, :4\' using ?, ?, out ?, out ?; execute immediate \'insert into "users" ("email", "name") values (:1, :2) returning "id","name" into :3, :4\' using ?, ?, out ?, out ?;end;',
-          bindings: function(bindings) {
+          bindings: (bindings) => {
             expect(bindings.length).to.equal(8);
             expect(bindings[0]).to.equal('foo');
             expect(bindings[1]).to.equal('taylor');
@@ -5940,7 +5945,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('insert method respects raw bindings', function() {
+  it('insert method respects raw bindings', () => {
     testsql(
       qb()
         .insert({ email: raw('CURRENT TIMESTAMP') })
@@ -5966,13 +5971,13 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('normalizes for missing keys in insert', function() {
-    var data = [{ a: 1 }, { b: 2 }, { a: 2, c: 3 }];
+  it('normalizes for missing keys in insert', () => {
+    const data = [{ a: 1 }, { b: 2 }, { a: 2, c: 3 }];
 
     //This is done because sqlite3 does not support valueForUndefined, and can't manipulate testsql to use 'clientsWithUseNullForUndefined'.
     //But we still want to make sure that when `useNullAsDefault` is explicitly defined, that the query still works as expected. (Bindings being undefined)
     //It's reset at the end of the test.
-    var previousValuesForUndefinedSqlite3 = clients.sqlite3.valueForUndefined;
+    const previousValuesForUndefinedSqlite3 = clients.sqlite3.valueForUndefined;
     clients.sqlite3.valueForUndefined = null;
 
     testsql(
@@ -6025,7 +6030,7 @@ describe('QueryBuilder', function() {
     clients.sqlite3.valueForUndefined = previousValuesForUndefinedSqlite3;
   });
 
-  it('empty insert should be a noop', function() {
+  it('empty insert should be a noop', () => {
     testsql(
       qb()
         .into('users')
@@ -6055,7 +6060,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('insert with empty array should be a noop', function() {
+  it('insert with empty array should be a noop', () => {
     testsql(
       qb()
         .into('users')
@@ -6085,7 +6090,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('insert with array with empty object and returning', function() {
+  it('insert with array with empty object and returning', () => {
     testsql(
       qb()
         .into('users')
@@ -6114,7 +6119,7 @@ describe('QueryBuilder', function() {
         oracledb: {
           sql:
             'insert into "users" ("id") values (default) returning "id" into ?',
-          bindings: function(bindings) {
+          bindings: (bindings) => {
             expect(bindings.length).to.equal(1);
             expect(bindings[0].toString()).to.equal(
               '[object ReturningHelper:id]'
@@ -6125,7 +6130,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('update method', function() {
+  it('update method', () => {
     testsql(
       qb()
         .update({ email: 'foo', name: 'bar' })
@@ -6153,7 +6158,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('update only method', function() {
+  it('update only method', () => {
     testsql(
       qb()
         .update({ email: 'foo', name: 'bar' })
@@ -6168,7 +6173,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('should not update columns undefined values', function() {
+  it('should not update columns undefined values', () => {
     testsql(
       qb()
         .update({ email: 'foo', name: undefined })
@@ -6191,7 +6196,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it("should allow for 'null' updates", function() {
+  it("should allow for 'null' updates", () => {
     testsql(
       qb()
         .update({ email: null, name: 'bar' })
@@ -6219,7 +6224,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('order by, limit', function() {
+  it('order by, limit', () => {
     // update with limit works only with mysql and derrivates
     testsql(
       qb()
@@ -6251,7 +6256,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('update method with joins mysql', function() {
+  it('update method with joins mysql', () => {
     testsql(
       qb()
         .from('users')
@@ -6283,7 +6288,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('update method with limit mysql', function() {
+  it('update method with limit mysql', () => {
     // limit works only with mysql or derrivates
     testsql(
       qb()
@@ -6316,7 +6321,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('update method without joins on postgres', function() {
+  it('update method without joins on postgres', () => {
     testsql(
       qb()
         .from('users')
@@ -6344,7 +6349,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('update method with returning on oracle', function() {
+  it('update method with returning on oracle', () => {
     testsql(
       qb()
         .from('users')
@@ -6354,7 +6359,7 @@ describe('QueryBuilder', function() {
         oracledb: {
           sql:
             'update "users" set "email" = ?, "name" = ? where "id" = ? returning "ROWID" into ?',
-          bindings: function(bindings) {
+          bindings: (bindings) => {
             expect(bindings.length).to.equal(4);
             expect(bindings[0]).to.equal('foo');
             expect(bindings[1]).to.equal('bar');
@@ -6375,7 +6380,7 @@ describe('QueryBuilder', function() {
   //   expect(chain.sql).to.eql(['foo', 'bar', 1]);
   // });
 
-  it('update method respects raw', function() {
+  it('update method respects raw', () => {
     testsql(
       qb()
         .from('users')
@@ -6403,7 +6408,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('increment method', function() {
+  it('increment method', () => {
     testsql(
       qb()
         .into('users')
@@ -6687,7 +6692,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('increment method with floats', function() {
+  it('increment method with floats', () => {
     testsql(
       qb()
         .into('users')
@@ -6715,7 +6720,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('decrement method', function() {
+  it('decrement method', () => {
     testsql(
       qb()
         .into('users')
@@ -6743,7 +6748,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('decrement method with floats', function() {
+  it('decrement method with floats', () => {
     testsql(
       qb()
         .into('users')
@@ -6771,7 +6776,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('delete method', function() {
+  it('delete method', () => {
     testsql(
       qb()
         .from('users')
@@ -6798,7 +6803,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('delete only method', function() {
+  it('delete only method', () => {
     testsql(
       qb()
         .from('users', { only: true })
@@ -6813,7 +6818,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('truncate method', function() {
+  it('truncate method', () => {
     testsql(
       qb()
         .table('users')
@@ -6826,7 +6831,7 @@ describe('QueryBuilder', function() {
         sqlite3: {
           sql: 'delete from `users`',
           bindings: [],
-          output: function(output) {
+          output: (output) => {
             expect(typeof output).to.equal('function');
           },
         },
@@ -6850,7 +6855,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('insert get id', function() {
+  it('insert get id', () => {
     testsql(
       qb()
         .from('users')
@@ -6874,7 +6879,7 @@ describe('QueryBuilder', function() {
         },
         oracledb: {
           sql: 'insert into "users" ("email") values (?) returning "id" into ?',
-          bindings: function(bindings) {
+          bindings: (bindings) => {
             expect(bindings.length).to.equal(2);
             expect(bindings[0]).to.equal('foo');
             expect(bindings[1].toString()).to.equal(
@@ -6886,7 +6891,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('wrapping', function() {
+  it('wrapping', () => {
     testsql(
       qb()
         .select('*')
@@ -6899,7 +6904,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('order by desc', function() {
+  it('order by desc', () => {
     testsql(
       qb()
         .select('*')
@@ -6913,7 +6918,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('providing null or false as second parameter builds correctly', function() {
+  it('providing null or false as second parameter builds correctly', () => {
     testsql(
       qb()
         .select('*')
@@ -6927,7 +6932,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('lock for update', function() {
+  it('lock for update', () => {
     testsql(
       qb()
         .select('*')
@@ -6955,7 +6960,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('lock in share mode', function() {
+  it('lock in share mode', () => {
     testsql(
       qb()
         .select('*')
@@ -6979,7 +6984,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('should allow lock (such as forUpdate) outside of a transaction', function() {
+  it('should allow lock (such as forUpdate) outside of a transaction', () => {
     testsql(
       qb()
         .select('*')
@@ -7003,7 +7008,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('lock only some tables for update', function() {
+  it('lock only some tables for update', () => {
     testsql(
       qb()
         .select('*')
@@ -7031,7 +7036,87 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('allows insert values of sub-select, #121', function() {
+  it('lock for update with skip locked #1937', () => {
+    testsql(
+      qb()
+        .select('*')
+        .from('foo')
+        .first()
+        .forUpdate()
+        .skipLocked(),
+      {
+        mysql: {
+          sql: 'select * from `foo` limit ? for update skip locked',
+          bindings: [1],
+        },
+        pg: {
+          sql: 'select * from "foo" limit ? for update skip locked',
+          bindings: [1],
+        },
+      }
+    );
+  });
+
+  it('lock for update with nowait #1937', () => {
+    testsql(
+      qb()
+        .select('*')
+        .from('foo')
+        .first()
+        .forUpdate()
+        .noWait(),
+      {
+        mysql: {
+          sql: 'select * from `foo` limit ? for update nowait',
+          bindings: [1],
+        },
+        pg: {
+          sql: 'select * from "foo" limit ? for update nowait',
+          bindings: [1],
+        },
+      }
+    );
+  });
+
+  it('noWait and skipLocked require a lock mode to be set', () => {
+    expect(() => {
+      qb()
+        .select('*')
+        .noWait()
+        .toString();
+    }).to.throw(
+      '.noWait() can only be used after a call to .forShare() or .forUpdate()!'
+    );
+    expect(() => {
+      qb()
+        .select('*')
+        .skipLocked()
+        .toString();
+    }).to.throw(
+      '.skipLocked() can only be used after a call to .forShare() or .forUpdate()!'
+    );
+  });
+
+  it('skipLocked conflicts with noWait and vice-versa', () => {
+    expect(() => {
+      qb()
+        .select('*')
+        .forUpdate()
+        .noWait()
+        .skipLocked()
+        .toString();
+    }).to.throw('.skipLocked() cannot be used together with .noWait()!');
+    expect(() => {
+      qb()
+        .select('*')
+        .forUpdate()
+        .skipLocked()
+        .noWait()
+        .toString();
+    }).to.throw('.noWait() cannot be used together with .skipLocked()!');
+  });
+
+  it('allows insert values of sub-select, #121', () => {
     testsql(
       qb()
         .table('entries')
@@ -7067,7 +7152,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('allows left outer join with raw values', function() {
+  it('allows left outer join with raw values', () => {
     testsql(
       qb()
         .select('*')
@@ -7103,7 +7188,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('should not break with null call #182', function() {
+  it('should not break with null call #182', () => {
     testsql(
       qb()
         .from('test')
@@ -7130,7 +7215,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('should clear offset when passing null', function() {
+  it('should clear offset when passing null', () => {
     testsql(
       qb()
         .from('test')
@@ -7157,22 +7242,22 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('allows passing builder into where clause, #162', function() {
-    var chain = qb()
+  it('allows passing builder into where clause, #162', () => {
+    const chain = qb()
       .from('chapter')
       .select('id')
       .where('book', 1);
-    var page = qb()
+    const page = qb()
       .from('page')
       .select('id')
       .whereIn('chapter_id', chain);
-    var word = qb()
+    const word = qb()
       .from('word')
       .select('id')
       .whereIn('page_id', page);
-    var three = chain.clone().del();
-    var two = page.clone().del();
-    var one = word.clone().del();
+    const three = chain.clone().del();
+    const two = page.clone().del();
+    const one = word.clone().del();
 
     testsql(one, {
       mysql: {
@@ -7240,9 +7325,9 @@ describe('QueryBuilder', function() {
     });
   });
 
-  it('allows specifying the columns and the query for insert, #211', function() {
-    var id = 1;
-    var email = 'foo@bar.com';
+  it('allows specifying the columns and the query for insert, #211', () => {
+    const id = 1;
+    const email = 'foo@bar.com';
     testsql(
       qb()
         .into(raw('recipients (recipient_id, email)'))
@@ -7280,9 +7365,9 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('does an update with join on mysql, #191', function() {
-    var setObj = { 'tblPerson.City': 'Boonesville' };
-    var query = qb()
+  it('does an update with join on mysql, #191', () => {
+    const setObj = { 'tblPerson.City': 'Boonesville' };
+    const query = qb()
       .table('tblPerson')
       .update(setObj)
       .join(
@@ -7318,15 +7403,15 @@ describe('QueryBuilder', function() {
     });
   });
 
-  it('does crazy advanced inserts with clever raw use, #211', function() {
-    var q1 = qb()
+  it('does crazy advanced inserts with clever raw use, #211', () => {
+    const q1 = qb()
       .select(raw("'user'"), raw("'user@foo.com'"))
       .whereNotExists(function() {
         this.select(1)
           .from('recipients')
           .where('recipient_id', 1);
       });
-    var q2 = qb()
+    const q2 = qb()
       .table('recipients')
       .insert(raw('(recipient_id, email) ?', [q1]));
 
@@ -7352,7 +7437,7 @@ describe('QueryBuilder', function() {
     });
   });
 
-  it('supports capitalized operators', function() {
+  it('supports capitalized operators', () => {
     testsql(
       qb()
         .select('*')
@@ -7379,7 +7464,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('supports POSIX regex operators in Postgres', function() {
+  it('supports POSIX regex operators in Postgres', () => {
     testsql(
       qb()
         .select('*')
@@ -7398,7 +7483,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('supports NOT ILIKE operator in Postgres', function() {
+  it('supports NOT ILIKE operator in Postgres', () => {
     testsql(
       qb()
         .select('*')
@@ -7417,8 +7502,8 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('throws if you try to use an invalid operator', function() {
-    expect(function() {
+  it('throws if you try to use an invalid operator', () => {
+    expect(() => {
       qb()
         .select('*')
         .where('id', 'isnt', 1)
@@ -7426,11 +7511,11 @@ describe('QueryBuilder', function() {
     }).to.throw('The operator "isnt" is not permitted');
   });
 
-  it('throws if you try to use an invalid operator in an inserted statement', function() {
-    var obj = qb()
+  it('throws if you try to use an invalid operator in an inserted statement', () => {
+    const obj = qb()
       .select('*')
       .where('id', 'isnt', 1);
-    expect(function() {
+    expect(() => {
       qb()
         .select('*')
         .from('users')
@@ -7439,7 +7524,7 @@ describe('QueryBuilder', function() {
     }).to.throw('The operator "isnt" is not permitted');
   });
 
-  it('#287 - wraps correctly for arrays', function() {
+  it('#287 - wraps correctly for arrays', () => {
     // arrays only work for postgres
     testsql(
       qb()
@@ -7450,11 +7535,6 @@ describe('QueryBuilder', function() {
         mysql: {
           sql:
             'select * from `value` inner join `table` on `table`.`array_column[1]` = ?',
-          bindings: [1],
-        },
-        mssql: {
-          sql:
-            'select * from [value] inner join [table] on [table].[array_column[1]] = ?',
           bindings: [1],
         },
         pg: {
@@ -7471,7 +7551,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('allows wrap on raw to wrap in parens and alias', function() {
+  it('allows wrap on raw to wrap in parens and alias', () => {
     testsql(
       qb()
         .select(
@@ -7515,7 +7595,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('allows select as syntax', function() {
+  it('allows select as syntax', () => {
     testsql(
       qb()
         .select(
@@ -7559,7 +7639,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('allows function for subselect column', function() {
+  it('allows function for subselect column', () => {
     testsql(
       qb()
         .select('e.lastname', 'e.salary')
@@ -7601,7 +7681,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('allows first as syntax', function() {
+  it('allows first as syntax', () => {
     testsql(
       qb()
         .select(
@@ -7641,8 +7721,8 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('supports arbitrarily nested raws', function() {
-    var chain = qb()
+  it('supports arbitrarily nested raws', () => {
+    const chain = qb()
       .select('*')
       .from('places')
       .where(
@@ -7682,7 +7762,7 @@ describe('QueryBuilder', function() {
     });
   });
 
-  it('has joinRaw for arbitrary join clauses', function() {
+  it('has joinRaw for arbitrary join clauses', () => {
     testsql(
       qb()
         .select('*')
@@ -7714,7 +7794,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('allows a raw query in the second param', function() {
+  it('allows a raw query in the second param', () => {
     testsql(
       qb()
         .select('*')
@@ -7746,7 +7826,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('allows join "using"', function() {
+  it('allows join "using"', () => {
     testsql(
       qb()
         .select('*')
@@ -7800,7 +7880,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('allows sub-query function on insert, #427', function() {
+  it('allows sub-query function on insert, #427', () => {
     testsql(
       qb()
         .into('votes')
@@ -7830,7 +7910,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('allows sub-query chain on insert, #427', function() {
+  it('allows sub-query chain on insert, #427', () => {
     testsql(
       qb()
         .into('votes')
@@ -7865,7 +7945,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('allows for raw values in join, #441', function() {
+  it('allows for raw values in join, #441', () => {
     testsql(
       qb()
         .select('A.nid AS id')
@@ -7908,7 +7988,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('allows insert values of sub-select without raw, #627', function() {
+  it('allows insert values of sub-select without raw, #627', () => {
     testsql(
       qb()
         .table('entries')
@@ -7944,8 +8024,8 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('correctly orders parameters when selecting from subqueries, #704', function() {
-    var subquery = qb()
+  it('correctly orders parameters when selecting from subqueries, #704', () => {
+    const subquery = qb()
       .select(raw('? as f', ['inner raw select']))
       .as('g');
     testsql(
@@ -7983,7 +8063,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('escapes queries properly, #737', function() {
+  it('escapes queries properly, #737', () => {
     testsql(
       qb()
         .select('id","name', 'id`name')
@@ -8009,7 +8089,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('has a fromJS method for json construction of queries', function() {
+  it('has a fromJS method for json construction of queries', () => {
     testsql(
       qb().fromJS({
         select: '*',
@@ -8044,10 +8124,10 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('has a modify method which accepts a function that can modify the query', function() {
+  it('has a modify method which accepts a function that can modify the query', () => {
     // arbitrary number of arguments can be passed to `.modify(queryBuilder, ...)`,
     // builder is bound to `this`
-    var withBars = function(queryBuilder, table, fk) {
+    const withBars = function(queryBuilder, table, fk) {
       if (!this || this !== queryBuilder) {
         throw 'Expected query builder passed as first argument and bound as `this` context';
       }
@@ -8080,12 +8160,12 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('Allows for empty where #749', function() {
+  it('Allows for empty where #749', () => {
     testsql(
       qb()
         .select('foo')
         .from('tbl')
-        .where(function() {}),
+        .where(() => {}),
       {
         mysql: 'select `foo` from `tbl`',
         mssql: 'select [foo] from [tbl]',
@@ -8094,7 +8174,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('escapes single quotes properly', function() {
+  it('escapes single quotes properly', () => {
     testquery(
       qb()
         .select('*')
@@ -8107,7 +8187,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('escapes double quotes property', function() {
+  it('escapes double quotes property', () => {
     testquery(
       qb()
         .select('*')
@@ -8119,7 +8199,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('escapes backslashes properly', function() {
+  it('escapes backslashes properly', () => {
     testquery(
       qb()
         .select('*')
@@ -8131,7 +8211,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('allows join without operator and with value 0 #953', function() {
+  it('allows join without operator and with value 0 #953', () => {
     testsql(
       qb()
         .select('*')
@@ -8154,7 +8234,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('allows join with operator and with value 0 #953', function() {
+  it('allows join with operator and with value 0 #953', () => {
     testsql(
       qb()
         .select('*')
@@ -8177,8 +8257,8 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('where with date object', function() {
-    var date = new Date();
+  it('where with date object', () => {
+    const date = new Date();
     testsql(
       qb()
         .select('*')
@@ -8205,8 +8285,8 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('raw where with date object', function() {
-    var date = new Date();
+  it('raw where with date object', () => {
+    const date = new Date();
     testsql(
       qb()
         .select('*')
@@ -8233,27 +8313,25 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('#965 - .raw accepts Array and Non-Array bindings', function() {
-    var expected = function(fieldName, expectedBindings) {
-      return {
-        mysql: {
-          sql: 'select * from `users` where ' + fieldName + ' = ?',
-          bindings: expectedBindings,
-        },
-        mssql: {
-          sql: 'select * from [users] where ' + fieldName + ' = ?',
-          bindings: expectedBindings,
-        },
-        pg: {
-          sql: 'select * from "users" where ' + fieldName + ' = ?',
-          bindings: expectedBindings,
-        },
-        'pg-redshift': {
-          sql: 'select * from "users" where ' + fieldName + ' = ?',
-          bindings: expectedBindings,
-        },
-      };
-    };
+  it('#965 - .raw accepts Array and Non-Array bindings', () => {
+    const expected = (fieldName, expectedBindings) => ({
+      mysql: {
+        sql: 'select * from `users` where ' + fieldName + ' = ?',
+        bindings: expectedBindings,
+      },
+      mssql: {
+        sql: 'select * from [users] where ' + fieldName + ' = ?',
+        bindings: expectedBindings,
+      },
+      pg: {
+        sql: 'select * from "users" where ' + fieldName + ' = ?',
+        bindings: expectedBindings,
+      },
+      'pg-redshift': {
+        sql: 'select * from "users" where ' + fieldName + ' = ?',
+        bindings: expectedBindings,
+      },
+    });
 
     //String
     testsql(
@@ -8288,8 +8366,8 @@ describe('QueryBuilder', function() {
     );
 
     //Date
-    var date = new Date(2016, 0, 5, 10, 19, 30, 599);
-    var sqlUpdTime = '2016-01-05 10:19:30.599';
+    const date = new Date(2016, 0, 5, 10, 19, 30, 599);
+    const sqlUpdTime = '2016-01-05 10:19:30.599';
     testsql(
       qb()
         .select('*')
@@ -8316,7 +8394,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('#1118 orWhere({..}) generates or (and - and - and)', function() {
+  it('#1118 orWhere({..}) generates or (and - and - and)', () => {
     testsql(
       qb()
         .select('*')
@@ -8351,7 +8429,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('#1228 Named bindings', function() {
+  it('#1228 Named bindings', () => {
     testsql(
       qb()
         .select('*')
@@ -8377,18 +8455,18 @@ describe('QueryBuilder', function() {
       }
     );
 
-    var namedBindings = {
+    const namedBindings = {
       name: 'users.name',
       thisGuy: 'Bob',
       otherGuy: 'Jay',
     };
     //Had to do it this way as the 'raw' statement's .toQuery is called before testsql, meaning mssql and other dialects would always get the output of qb() default client
     //as MySQL, which means testing the query per dialect won't work. [users].[name] would be `users`.`name` for mssql which is incorrect.
-    var mssql = clients.mssql;
-    var mysql = clients.mysql;
-    var sqlite3 = clients.sqlite3;
+    const mssql = clients.mssql;
+    const mysql = clients.mysql;
+    const sqlite3 = clients.sqlite3;
 
-    var mssqlQb = mssql
+    const mssqlQb = mssql
       .queryBuilder()
       .select('*')
       .from('users')
@@ -8396,7 +8474,7 @@ describe('QueryBuilder', function() {
         mssql.raw(':name: = :thisGuy or :name: = :otherGuy', namedBindings)
       )
       .toSQL();
-    var mysqlQb = mysql
+    const mysqlQb = mysql
       .queryBuilder()
       .select('*')
       .from('users')
@@ -8404,7 +8482,7 @@ describe('QueryBuilder', function() {
         mysql.raw(':name: = :thisGuy or :name: = :otherGuy', namedBindings)
       )
       .toSQL();
-    var sqliteQb = sqlite3
+    const sqliteQb = sqlite3
       .queryBuilder()
       .select('*')
       .from('users')
@@ -8429,7 +8507,7 @@ describe('QueryBuilder', function() {
     expect(sqliteQb.bindings).to.deep.equal(['Bob', 'Jay']);
   });
 
-  it('#1268 - valueForUndefined should be in toSQL(QueryCompiler)', function() {
+  it('#1268 - valueForUndefined should be in toSQL(QueryCompiler)', () => {
     testsql(
       qb()
         .insert([
@@ -8466,7 +8544,7 @@ describe('QueryBuilder', function() {
       }
     );
 
-    expect(function() {
+    expect(() => {
       clients.sqlite3
         .queryBuilder()
         .insert([{ id: void 0 }])
@@ -8474,7 +8552,7 @@ describe('QueryBuilder', function() {
         .toString();
     }).to.throw(TypeError);
 
-    expect(function() {
+    expect(() => {
       clientsWithNullAsDefault.sqlite3
         .queryBuilder()
         .insert([{ id: void 0 }])
@@ -8483,7 +8561,7 @@ describe('QueryBuilder', function() {
     }).to.not.throw(TypeError);
   });
 
-  it('#1402 - raw should take "not" into consideration in querybuilder', function() {
+  it('#1402 - raw should take "not" into consideration in querybuilder', () => {
     testsql(
       qb()
         .from('testtable')
@@ -8513,42 +8591,66 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('Any undefined binding in a SELECT query should throw an error', function() {
-    var qbuilders = [
-      qb()
-        .from('accounts')
-        .where({ Login: void 0 })
-        .select(),
-      qb()
-        .from('accounts')
-        .where('Login', void 0)
-        .select(),
-      qb()
-        .from('accounts')
-        .where('Login', '>=', void 0)
-        .select(),
-      qb()
-        .from('accounts')
-        .whereIn('Login', ['test', 'val', void 0])
-        .select(),
-      qb()
-        .from('accounts')
-        .where({ Login: ['1', '2', '3', void 0] }),
-      qb()
-        .from('accounts')
-        .where({ Login: { Test: '123', Value: void 0 } }),
-      qb()
-        .from('accounts')
-        .where({ Login: ['1', ['2', [void 0]]] }),
-      qb()
-        .from('accounts')
-        .update({ test: '1', test2: void 0 })
-        .where({ abc: 'test', cba: void 0 }),
+  it('Any undefined binding in a SELECT query should throw an error', () => {
+    const qbuilders = [
+      {
+        builder: qb()
+          .from('accounts')
+          .where({ Login: void 0 })
+          .select(),
+        undefinedColumns: ['Login'],
+      },
+      {
+        builder: qb()
+          .from('accounts')
+          .where('Login', void 0)
+          .select(),
+        undefinedColumns: ['Login'],
+      },
+      {
+        builder: qb()
+          .from('accounts')
+          .where('Login', '>=', void 0)
+          .select(),
+        undefinedColumns: ['Login'],
+      },
+      {
+        builder: qb()
+          .from('accounts')
+          .whereIn('Login', ['test', 'val', void 0])
+          .select(),
+        undefinedColumns: ['Login'],
+      },
+      {
+        builder: qb()
+          .from('accounts')
+          .where({ Login: ['1', '2', '3', void 0] }),
+        undefinedColumns: ['Login'],
+      },
+      {
+        builder: qb()
+          .from('accounts')
+          .where({ Login: { Test: '123', Value: void 0 } }),
+        undefinedColumns: ['Login'],
+      },
+      {
+        builder: qb()
+          .from('accounts')
+          .where({ Login: ['1', ['2', [void 0]]] }),
+        undefinedColumns: ['Login'],
+      },
+      {
+        builder: qb()
+          .from('accounts')
+          .update({ test: '1', test2: void 0 })
+          .where({ abc: 'test', cba: void 0 }),
+        undefinedColumns: ['cba'],
+      },
     ];
-    qbuilders.forEach(function(qbuilder) {
+    qbuilders.forEach(({ builder, undefinedColumns }) => {
       try {
         //Must be present, but makes no difference since it throws.
-        testsql(qbuilder, {
+        testsql(builder, {
           mysql: {
             sql: '',
             bindings: [],
@@ -8577,40 +8679,47 @@ describe('QueryBuilder', function() {
       } catch (error) {
         expect(error.message).to.contain(
           'Undefined binding(s) detected when compiling ' +
-            qbuilder._method.toUpperCase() +
-            ' query:'
+            builder._method.toUpperCase() +
+            `. Undefined column(s): [${undefinedColumns.join(', ')}] query:`
         ); //This test is not for asserting correct queries
       }
     });
   });
 
-  it('Any undefined binding in a RAW query should throw an error', function() {
-    var expectedErrorMessageContains =
-      'Undefined binding(s) detected when compiling RAW query:'; //This test is not for asserting correct queries
-    var raws = [
-      raw('?', [undefined]),
-      raw(':col = :value', { col: 'test', value: void 0 }),
-      raw('? = ?', ['test', void 0]),
-      raw('? = ?', ['test', { test: void 0 }]),
-      raw('?', [['test', void 0]]),
+  it('Any undefined binding in a RAW query should throw an error', () => {
+    const raws = [
+      { query: raw('?', [undefined]), undefinedIndices: [0] },
+      {
+        query: raw(':col = :value', { col: 'test', value: void 0 }),
+        undefinedIndices: ['value'],
+      },
+      { query: raw('? = ?', ['test', void 0]), undefinedIndices: [1] },
+      {
+        query: raw('? = ?', ['test', { test: void 0 }]),
+        undefinedIndices: [1],
+      },
+      { query: raw('?', [['test', void 0]]), undefinedIndices: [0] },
     ];
-    raws.forEach(function(raw) {
+    raws.forEach(({ query, undefinedIndices }) => {
       try {
-        raw = raw.toSQL();
+        query.toSQL();
         expect(true).to.equal(
           false,
           'Expected to throw error in compilation about undefined bindings.'
         );
       } catch (error) {
+        const expectedErrorMessageContains = `Undefined binding(s) detected for keys [${undefinedIndices.join(
+          ', '
+        )}] when compiling RAW query:`;
         expect(error.message).to.contain(expectedErrorMessageContains); //This test is not for asserting correct queries
       }
     });
   });
 
-  it('Support escaping of named bindings', function() {
-    var namedBindings = { a: 'foo', b: 'bar', c: 'baz' };
+  it('Support escaping of named bindings', () => {
+    const namedBindings = { a: 'foo', b: 'bar', c: 'baz' };
 
-    var raws = [
+    const raws = [
       [
         raw(':a: = :b OR :c', namedBindings),
         '"foo" = ? OR ?',
@@ -8630,17 +8739,17 @@ describe('QueryBuilder', function() {
       [raw('\\:a: = \\:b OR \\:c', namedBindings), ':a: = :b OR :c', []],
     ];
 
-    raws.forEach(function(raw) {
-      var result = raw[0].toSQL();
+    raws.forEach((raw) => {
+      const result = raw[0].toSQL();
       expect(result.sql).to.equal(raw[1]);
       expect(result.bindings).to.deep.equal(raw[2]);
     });
   });
 
-  it('Respect casting with named bindings', function() {
-    var namedBindings = { a: 'foo', b: 'bar', c: 'baz' };
+  it('Respect casting with named bindings', () => {
+    const namedBindings = { a: 'foo', b: 'bar', c: 'baz' };
 
-    var raws = [
+    const raws = [
       [
         raw(':a: = :b::TEXT OR :c', namedBindings),
         '"foo" = ?::TEXT OR ?',
@@ -8678,14 +8787,14 @@ describe('QueryBuilder', function() {
       ],
     ];
 
-    raws.forEach(function(raw) {
-      var result = raw[0].toSQL();
+    raws.forEach((raw) => {
+      const result = raw[0].toSQL();
       expect(result.sql).to.equal(raw[1]);
       expect(result.bindings).to.deep.equal(raw[2]);
     });
   });
 
-  it('query \\\\? escaping', function() {
+  it('query \\\\? escaping', () => {
     testquery(
       qb()
         .select('*')
@@ -8701,7 +8810,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('operator transformation', function() {
+  it('operator transformation', () => {
     // part of common base code, no need to test on every dialect
     testsql(
       qb()
@@ -8732,7 +8841,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it("wrapped 'with' clause select", function() {
+  it("wrapped 'with' clause select", () => {
     testsql(
       qb()
         .with('withClause', function() {
@@ -8755,7 +8864,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it("wrapped 'with' clause insert", function() {
+  it("wrapped 'with' clause insert", () => {
     testsql(
       qb()
         .with('withClause', function() {
@@ -8774,7 +8883,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it("wrapped 'with' clause multiple insert", function() {
+  it("wrapped 'with' clause multiple insert", () => {
     testsql(
       qb()
         .with('withClause', function() {
@@ -8812,7 +8921,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it("wrapped 'with' clause update", function() {
+  it("wrapped 'with' clause update", () => {
     testsql(
       qb()
         .with('withClause', function() {
@@ -8832,7 +8941,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it("wrapped 'with' clause delete", function() {
+  it("wrapped 'with' clause delete", () => {
     testsql(
       qb()
         .with('withClause', function() {
@@ -8852,7 +8961,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it("raw 'with' clause", function() {
+  it("raw 'with' clause", () => {
     testsql(
       qb()
         .with('withRawClause', raw('select "foo" as "baz" from "users"'))
@@ -8873,7 +8982,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it("chained wrapped 'with' clause", function() {
+  it("chained wrapped 'with' clause", () => {
     testsql(
       qb()
         .with('firstWithClause', function() {
@@ -8899,7 +9008,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it("nested 'with' clause", function() {
+  it("nested 'with' clause", () => {
     testsql(
       qb()
         .with('withClause', function() {
@@ -8928,7 +9037,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it("nested 'with' clause with bindings", function() {
+  it("nested 'with' clause with bindings", () => {
     testsql(
       qb()
         .with('withClause', function() {
@@ -8975,7 +9084,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('should return dialect specific sql and bindings with  toSQL().toNative()', function() {
+  it('should return dialect specific sql and bindings with  toSQL().toNative()', () => {
     testNativeSql(
       qb()
         .from('table')
@@ -9005,7 +9114,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it("nested and chained wrapped 'with' clause", function() {
+  it("nested and chained wrapped 'with' clause", () => {
     testsql(
       qb()
         .with('firstWithClause', function() {
@@ -9043,7 +9152,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it("nested and chained wrapped 'withRecursive' clause", function() {
+  it("nested and chained wrapped 'withRecursive' clause", () => {
     testsql(
       qb()
         .withRecursive('firstWithClause', function() {
@@ -9202,7 +9311,7 @@ describe('QueryBuilder', function() {
     });
   });
 
-  it('#1710, properly escapes arrays in where clauses in postgresql', function() {
+  it('#1710, properly escapes arrays in where clauses in postgresql', () => {
     testquery(
       qb()
         .select('*')
@@ -9234,11 +9343,9 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('#2003, properly escapes objects with toPostgres specialization', function() {
+  it('#2003, properly escapes objects with toPostgres specialization', () => {
     function TestObject() {}
-    TestObject.prototype.toPostgres = function() {
-      return 'foobar';
-    };
+    TestObject.prototype.toPostgres = () => 'foobar';
     testquery(
       qb()
         .table('sometable')
@@ -9249,7 +9356,7 @@ describe('QueryBuilder', function() {
     );
   });
 
-  it('Throws error if .update() results in faulty sql due to no data', function() {
+  it('Throws error if .update() results in faulty sql due to no data', () => {
     try {
       qb()
         .table('sometable')
@@ -9263,7 +9370,7 @@ describe('QueryBuilder', function() {
     }
   });
 
-  it('Throws error if .first() is called on update', function() {
+  it('Throws error if .first() is called on update', () => {
     try {
       qb()
         .table('sometable')
@@ -9279,7 +9386,7 @@ describe('QueryBuilder', function() {
     }
   });
 
-  it('Throws error if .first() is called on insert', function() {
+  it('Throws error if .first() is called on insert', () => {
     try {
       qb()
         .table('sometable')
@@ -9295,7 +9402,7 @@ describe('QueryBuilder', function() {
     }
   });
 
-  it('Throws error if .first() is called on delete', function() {
+  it('Throws error if .first() is called on delete', () => {
     try {
       qb()
         .table('sometable')
@@ -9309,8 +9416,8 @@ describe('QueryBuilder', function() {
     }
   });
 
-  describe('knex.ref()', function() {
-    it('Can be used as parameter in where-clauses', function() {
+  describe('knex.ref()', () => {
+    it('Can be used as parameter in where-clauses', () => {
       testquery(
         qb()
           .table('sometable')
@@ -9331,7 +9438,7 @@ describe('QueryBuilder', function() {
       );
     });
 
-    it('Can use .as() for alias', function() {
+    it('Can use .as() for alias', () => {
       testquery(
         qb()
           .table('sometable')
@@ -9348,7 +9455,7 @@ describe('QueryBuilder', function() {
     });
   });
 
-  it('Can call knex.select(0)', function() {
+  it('Can call knex.select(0)', () => {
     testquery(qb().select(0), {
       pg: 'select 0',
       mysql: 'select 0',
@@ -9358,10 +9465,10 @@ describe('QueryBuilder', function() {
     });
   });
 
-  it('should warn to user when use `.returning()` function in MySQL', function() {
-    var loggerConfigForTestingWarnings = {
+  it('should warn to user when use `.returning()` function in MySQL', () => {
+    const loggerConfigForTestingWarnings = {
       log: {
-        warn: function(message) {
+        warn: (message) => {
           if (
             message ===
             '.returning() is not supported by mysql and will not have any effect.'
@@ -9372,11 +9479,11 @@ describe('QueryBuilder', function() {
       },
     };
 
-    var mysqlClientForWarnings = new MySQL_Client(
+    const mysqlClientForWarnings = new MySQL_Client(
       Object.assign({ client: 'mysql' }, loggerConfigForTestingWarnings)
     );
 
-    expect(function() {
+    expect(() => {
       testsql(
         qb()
           .into('users')
@@ -9395,10 +9502,10 @@ describe('QueryBuilder', function() {
     }).to.throw(Error);
   });
 
-  it('should warn to user when use `.returning()` function in SQLite3', function() {
-    var loggerConfigForTestingWarnings = {
+  it('should warn to user when use `.returning()` function in SQLite3', () => {
+    const loggerConfigForTestingWarnings = {
       log: {
-        warn: function(message) {
+        warn: (message) => {
           if (
             message ===
             '.returning() is not supported by sqlite3 and will not have any effect.'
@@ -9409,11 +9516,11 @@ describe('QueryBuilder', function() {
       },
     };
 
-    var sqlite3ClientForWarnings = new SQLite3_Client(
+    const sqlite3ClientForWarnings = new SQLite3_Client(
       Object.assign({ client: 'sqlite3' }, loggerConfigForTestingWarnings)
     );
 
-    expect(function() {
+    expect(() => {
       testsql(
         qb()
           .into('users')
@@ -9432,7 +9539,7 @@ describe('QueryBuilder', function() {
     }).to.throw(Error);
   });
 
-  it('join with subquery using .withSchema', function() {
+  it('join with subquery using .withSchema', () => {
     testsql(
       qb()
         .from('departments')

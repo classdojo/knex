@@ -1,4 +1,3 @@
-/*global after, before, describe, it*/
 /*eslint no-var:0, indent:0, max-len:0 */
 'use strict';
 
@@ -7,8 +6,7 @@ const { expect } = require('chai');
 const sinon = require('sinon');
 const mockFs = require('mock-fs');
 const migrationListResolver = require('../../../lib/migrate/migration-list-resolver');
-const FsMigrations = require('../../../lib/migrate/sources/fs-migrations')
-  .default;
+const { FsMigrations } = require('../../../lib/migrate/sources/fs-migrations');
 
 describe('migration-list-resolver', () => {
   describe('listAll', () => {

@@ -1,21 +1,13 @@
 const Knex = require('../../lib/index');
+const QueryBuilder = require('../../lib/query/builder');
 const { expect } = require('chai');
 const bluebird = require('bluebird');
 const sqliteConfig = require('../knexfile').sqlite3;
 const sqlite3 = require('sqlite3');
 const { noop } = require('lodash');
-const { isNode6 } = require('../../lib/util/version-helper');
+const inherits = require('inherits');
 
 describe('knex', () => {
-  it('preserves global Bluebird Promise', () => {
-    const oldPromise = global.Promise;
-    global.Promise = bluebird;
-    expect(Promise.map).to.be.a('function'); // eslint-disable-line no-undef
-    require('../../knex');
-    expect(Promise.map).to.be.a('function'); // eslint-disable-line no-undef
-    global.Promise = oldPromise;
-  });
-
   describe('supports passing existing connection', () => {
     let connection;
     beforeEach(() => {
@@ -104,10 +96,6 @@ describe('knex', () => {
   });
 
   it('copying does not result in duplicate listeners', () => {
-    if (isNode6()) {
-      return;
-    }
-
     const knex = Knex({
       client: 'sqlite',
     });
@@ -141,10 +129,6 @@ describe('knex', () => {
   });
 
   it('adding listener to copy does not affect base knex', () => {
-    if (isNode6()) {
-      return;
-    }
-
     const knex = Knex({
       client: 'sqlite',
     });
@@ -186,6 +170,10 @@ describe('knex', () => {
   });
 
   it('passes queryContext to wrapIdentifier in raw query', () => {
+    if (!sqliteConfig) {
+      return;
+    }
+
     const knex = Knex(
       Object.assign({}, sqliteConfig, {
         wrapIdentifier: (str, origImpl, queryContext) => {
@@ -224,6 +212,10 @@ describe('knex', () => {
   });
 
   it('passes queryContext to wrapIdentifier in raw query in transaction', () => {
+    if (!sqliteConfig) {
+      return;
+    }
+
     const knex = Knex(
       Object.assign({}, sqliteConfig, {
         wrapIdentifier: (str, origImpl, queryContext) => {
@@ -284,44 +276,243 @@ describe('knex', () => {
     ).to.equal(null);
   });
 
-  it('transaction of a copy with userParams retains userparams', (done) => {
+  it('transaction of a copy with userParams retains userparams', () => {
+    if (!sqliteConfig) {
+      return;
+    }
+
     const knex = Knex(sqliteConfig);
 
     const knexWithParams = knex.withUserParams({ userParam: '451' });
 
-    knexWithParams.transaction((trx) => {
+    return knexWithParams.transaction((trx) => {
       expect(trx.userParams).to.deep.equal({
         userParam: '451',
       });
-      done();
       return bluebird.resolve();
     });
   });
 
-  it('creating transaction copy with user params should throw an error', (done) => {
+  it('propagates error correctly when all connections are in use', function() {
+    this.timeout(2000);
+    const knex = Knex(sqliteConfig);
+    return knex
+      .transaction()
+      .then(() => {
+        return knex.transaction();
+      })
+      .then(() => {
+        throw new Error('Should not reach here');
+      })
+      .catch((err) => {
+        expect(err.message).to.include('Timeout acquiring a connection');
+      });
+  });
+
+  it('supports direct retrieval of a transaction from provider', () => {
+    const knex = Knex(sqliteConfig);
+    const trxProvider = knex.transactionProvider();
+    const trxPromise = trxProvider();
+
+    let transaction;
+    return trxPromise
+      .then((trx) => {
+        transaction = trx;
+        expect(trx.client.transacting).to.equal(true);
+        return knex.transacting(trx).select(knex.raw('1 as result'));
+      })
+      .then((rows) => {
+        expect(rows[0].result).to.equal(1);
+        return transaction.commit();
+      })
+      .then(() => {
+        return transaction.executionPromise;
+      });
+  });
+
+  it('supports nested transaction for promise transactions', async () => {
+    const knex = Knex(sqliteConfig);
+    const trx = await knex.transaction();
+    const nestedTrx = await trx.transaction();
+    const nestedTrx2 = await nestedTrx.transaction();
+    expect(nestedTrx.name).to.equal('knex');
+    expect(nestedTrx2.name).to.equal('knex');
+  });
+
+  it('does not reject rolled back nested transactions by default', async () => {
+    const knex = Knex(sqliteConfig);
+    const trx = await knex.transaction();
+    const nestedTrx = await trx.transaction();
+    await nestedTrx.rollback();
+  });
+
+  it('supports accessing execution promise from standalone transaction', async () => {
     const knex = Knex(sqliteConfig);
 
-    knex.transaction((trx) => {
+    const trx = await knex.transaction();
+    const executionPromise = trx.executionPromise;
+    expect(executionPromise).to.be.ok;
+
+    expect(trx.client.transacting).to.equal(true);
+    const rows = await knex.transacting(trx).select(knex.raw('1 as result'));
+    expect(rows[0].result).to.equal(1);
+    await trx.commit();
+
+    const result = await executionPromise;
+    expect(result).to.be.undefined;
+  });
+
+  it('supports accessing execution promise from transaction with a callback', async () => {
+    const knex = Knex(sqliteConfig);
+    const trxPromise = new Promise((resolve, reject) => {
+      knex.transaction((transaction) => {
+        resolve(transaction);
+      });
+    });
+    const trx = await trxPromise;
+    const executionPromise = trx.executionPromise;
+    expect(executionPromise).to.be.ok;
+
+    expect(trx.client.transacting).to.equal(true);
+    const rows = await knex.transacting(trx).select(knex.raw('1 as result'));
+    expect(rows[0].result).to.equal(1);
+    await trx.commit();
+
+    const result = await executionPromise;
+    expect(result).to.be.undefined;
+  });
+
+  it('resolves execution promise if there was a manual rollback and transaction is set not to reject', async () => {
+    const knex = Knex(sqliteConfig);
+
+    const trx = await knex.transaction();
+    const executionPromise = trx.executionPromise;
+
+    expect(trx.client.transacting).to.equal(true);
+    const rows = await knex.transacting(trx).select(knex.raw('1 as result'));
+    expect(rows[0].result).to.equal(1);
+    await trx.rollback();
+
+    const result = await executionPromise;
+    expect(result).to.be.undefined;
+  });
+
+  it('rejects execution promise if there was a manual rollback and transaction is set to reject', async () => {
+    const knex = Knex(sqliteConfig);
+
+    const trx = await knex.transaction(undefined, {
+      doNotRejectOnRollback: false,
+    });
+    const executionPromise = trx.executionPromise;
+
+    expect(trx.client.transacting).to.equal(true);
+    const rows = await knex.transacting(trx).select(knex.raw('1 as result'));
+    expect(rows[0].result).to.equal(1);
+    await trx.rollback();
+
+    let errorWasThrown;
+    try {
+      await executionPromise;
+    } catch (err) {
+      errorWasThrown = true;
+      expect(err.message).to.equal(
+        'Transaction rejected with non-error: undefined'
+      );
+    }
+    expect(errorWasThrown).to.be.true;
+  });
+
+  it('does not reject promise when rolling back a transaction', async () => {
+    const knex = Knex(sqliteConfig);
+    const trxProvider = knex.transactionProvider();
+    const trx = await trxProvider();
+
+    await trx.rollback();
+    await trx.executionPromise;
+  });
+
+  it('returns false when calling isCompleted on a transaction that is not complete', async () => {
+    const knex = Knex(sqliteConfig);
+    const trxProvider = knex.transactionProvider();
+    const trx = await trxProvider();
+
+    const completed = trx.isCompleted();
+    expect(completed).to.be.false;
+  });
+
+  it('returns true when calling isCompleted on a transaction that is committed', async () => {
+    const knex = Knex(sqliteConfig);
+    const trxProvider = knex.transactionProvider();
+    const trx = await trxProvider();
+
+    await trx.commit();
+
+    const completed = trx.isCompleted();
+    expect(completed).to.be.true;
+  });
+
+  it('returns true when calling isCompleted on a transaction that is rolled back', async () => {
+    const knex = Knex(sqliteConfig);
+    const trxProvider = knex.transactionProvider();
+    const trx = await trxProvider();
+
+    await trx.rollback();
+
+    const completed = trx.isCompleted();
+    expect(completed).to.be.true;
+  });
+
+  it('returns false when calling isCompleted within a transaction handler', async () => {
+    const knex = Knex(sqliteConfig);
+    await knex.transaction((trx) => {
+      expect(trx.isCompleted()).to.be.false;
+
+      return trx.select(trx.raw('1 as result'));
+    });
+  });
+
+  it('creating transaction copy with user params should throw an error', () => {
+    if (!sqliteConfig) {
+      return;
+    }
+
+    const knex = Knex(sqliteConfig);
+
+    return knex.transaction((trx) => {
       expect(() => {
         trx.withUserParams({ userParam: '451' });
       }).to.throw(
         /Cannot set user params on a transaction - it can only inherit params from main knex instance/
       );
-      done();
       return bluebird.resolve();
     });
   });
 
   it('throws if client module has not been installed', () => {
+    // create dummy dialect which always fails when trying to load driver
+    const SqliteClient = require(`../../lib/dialects/sqlite3/index.js`);
+    function ClientFoobar(config) {
+      SqliteClient.call(this, config);
+    }
+
+    inherits(ClientFoobar, SqliteClient);
+
+    ClientFoobar.prototype._driver = () => {
+      throw new Error('Cannot require...');
+    };
+    ClientFoobar.prototype.driverName = 'foo-bar';
+
     expect(() => {
-      Knex({ client: 'oracledb', connection: {} });
-    }).to.throw(
-      "Knex: run\n$ npm install oracledb --save\nCannot find module 'oracledb'"
-    );
+      Knex({ client: ClientFoobar, connection: {} });
+    }).to.throw('Knex: run\n$ npm install foo-bar --save\nCannot require...');
   });
 
   describe('async stack traces', () => {
     it('should capture stack trace on query builder instantiation', () => {
+      if (!sqliteConfig) {
+        return;
+      }
+
       const knex = Knex(
         Object.assign({}, sqliteConfig, { asyncStackTraces: true })
       );
@@ -332,6 +523,62 @@ describe('knex', () => {
           expect(err.stack.split('\n')[1]).to.match(/at createQueryBuilder \(/); // the index 1 might need adjustment if the code is refactored
           expect(typeof err.originalStack).to.equal('string');
         });
+    });
+  });
+
+  describe('extend query builder', () => {
+    let connection;
+    beforeEach(() => {
+      connection = new sqlite3.Database(':memory:');
+    });
+
+    afterEach(() => {
+      connection.close();
+      delete QueryBuilder.prototype.customSelect;
+    });
+
+    it('should extend default queryBuilder', (done) => {
+      Knex.QueryBuilder.extend('customSelect', function(value) {
+        return this.select(this.client.raw(`${value} as value`));
+      });
+
+      const knex = Knex({ client: 'sqlite3' });
+      knex
+        .connection(connection)
+        .customSelect(42)
+        .then((result) => {
+          expect(result[0].value).to.equal(42);
+          done();
+        });
+    });
+
+    it('should have custom method with transaction', async () => {
+      Knex.QueryBuilder.extend('customSelect', function(value) {
+        return this.select(this.client.raw(`${value} as value`));
+      });
+
+      const knex = Knex(sqliteConfig);
+      const trx = await knex.transaction();
+
+      const result = await trx.customSelect(42);
+      expect(result[0].value).to.equal(42);
+    });
+
+    it('should have custom method on knex with user params', async () => {
+      Knex.QueryBuilder.extend('customSelect', function(value) {
+        return this.select(this.client.raw(`${value} as value`));
+      });
+
+      const knex = Knex(sqliteConfig);
+      const knewWithParams = knex.withUserParams({ foo: 'bar' });
+      const result = await knewWithParams.customSelect(42);
+      expect(result[0].value).to.equal(42);
+    });
+
+    it('should throw exception when extending existing method', () => {
+      expect(() =>
+        Knex.QueryBuilder.extend('select', function(value) {})
+      ).to.throw(`Can't extend QueryBuilder with existing method ('select')`);
     });
   });
 });

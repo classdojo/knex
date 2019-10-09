@@ -1,13 +1,16 @@
-/*global after, before, describe, expect, it*/
+/*global expect*/
 'use strict';
 
 const equal = require('assert').equal;
 const fs = require('fs');
 const path = require('path');
 const rimraf = require('rimraf');
-const Promise = require('bluebird');
+const Bluebird = require('bluebird');
+const knexLib = require('../../../knex');
+const logger = require('../logger');
+const config = require('../../knexfile');
+const _ = require('lodash');
 const testMemoryMigrations = require('./memory-migrations');
-const { isNode6 } = require('../../../lib/util/version-helper');
 
 module.exports = function(knex) {
   require('rimraf').sync(path.join(__dirname, './migration'));
@@ -21,23 +24,25 @@ module.exports = function(knex) {
 
   describe('knex.migrate', function() {
     it('should not fail on null default for timestamp', () => {
-      return knex.migrate
-        .latest({
-          directory: 'test/integration/migrate/null_timestamp_default',
+      return knex.schema
+        .dropTableIfExists('null_date')
+        .then(() => {
+          return knex.migrate.latest({
+            directory: 'test/integration/migrate/null_timestamp_default',
+          });
         })
         .then(() => {
-          return knex.into('null_date').insert({});
+          return knex.into('null_date').insert({
+            dummy: 'cannot insert empty object',
+          });
         })
         .then(() => {
-          return knex
-            .from('null_date')
-            .select()
-            .first();
+          return knex('null_date').first();
         })
         .then((rows) => {
           expect(rows.deleted_at).to.equal(null);
         })
-        .then(() => {
+        .finally(() => {
           return knex.migrate.rollback({
             directory: 'test/integration/migrate/null_timestamp_default',
           });
@@ -71,22 +76,38 @@ module.exports = function(knex) {
       });
     }
 
-    if (!isNode6()) {
-      it('should not fail drop-and-recreate-column operation when using async/await', () => {
-        return knex.migrate
-          .latest({
-            directory: 'test/integration/migrate/async-await-drop-and-recreate',
-          })
-          .then(() => {
-            return knex.migrate.rollback({
-              directory:
-                'test/integration/migrate/async-await-drop-and-recreate',
-            });
-          });
+    if (knex.client.driverName === 'sqlite3') {
+      it('should not fail rename-and-drop-column with multiline sql from legacy db', async () => {
+        const knexConfig = _.extend({}, config.sqlite3, {
+          connection: {
+            filename: __dirname + '/../../multilineCreateMaster.sqlite3',
+          },
+          migrations: {
+            directory:
+              'test/integration/migrate/rename-and-drop-column-with-multiline-sql-from-legacy-db',
+          },
+        });
+
+        const db = logger(knexLib(knexConfig));
+
+        await db.migrate.latest();
+        await db.migrate.rollback();
       });
     }
 
-    if (!isNode6() && knex.client.driverName === 'pg') {
+    it('should not fail drop-and-recreate-column operation when using async/await', () => {
+      return knex.migrate
+        .latest({
+          directory: 'test/integration/migrate/async-await-drop-and-recreate',
+        })
+        .then(() => {
+          return knex.migrate.rollback({
+            directory: 'test/integration/migrate/async-await-drop-and-recreate',
+          });
+        });
+    });
+
+    if (knex.client.driverName === 'pg') {
       it('should not fail drop-and-recreate-column operation when using async/await and schema', () => {
         return knex.migrate
           .latest({
@@ -172,7 +193,7 @@ module.exports = function(knex) {
       });
 
       it('should return a positive number if the DB is ahead', function() {
-        return Promise.all([
+        return Bluebird.all([
           knex('knex_migrations')
             .returning('id')
             .insert({
@@ -194,7 +215,7 @@ module.exports = function(knex) {
               batch: 6,
               migration_time: new Date(),
             }),
-        ]).spread(function(migration1, migration2, migration3) {
+        ]).then(([migration1, migration2, migration3]) => {
           return knex.migrate
             .status({ directory: 'test/integration/migrate/test' })
             .then(function(migrationLevel) {
@@ -224,7 +245,12 @@ module.exports = function(knex) {
         });
       });
 
-      it('should remove the record in the lock table once finished', function() {
+      it('should remove the record in the lock table once finished (TODO: fix random oracle fail)', function() {
+        if (knex.client.driverName == 'oracledb') {
+          this.skip();
+          return;
+        }
+
         return knex('knex_migrations_lock')
           .select('*')
           .then(function(data) {
@@ -256,6 +282,57 @@ module.exports = function(knex) {
             // Clean up lock for other tests
             return knex('knex_migrations_lock').update({ is_locked: 0 });
           });
+      });
+
+      it('should work with concurent calls to _lockMigrations', async function() {
+        if (knex.client.driverName == 'sqlite3') {
+          // sqlite doesn't support concurrency
+          this.skip();
+          return;
+        }
+
+        const migrator = knex.migrate;
+        try {
+          // Start two transactions and call _lockMigrations in each of them.
+          // Simulate a race condition by waiting until both are started before
+          // attempting to commit either one. Exactly one should succeed.
+          //
+          // Both orderings are legitimate, but in practice the first transaction
+          // to start will be the one that succeeds in all currently supported
+          // databases (CockroachDB 1.x is an example of a database where the
+          // second transaction would win, but this changed in 2.0). This test
+          // assumes the first transaction wins, but could be refactored to support
+          // both orderings if desired.
+          const trx1 = await knex.transaction();
+          await migrator._lockMigrations(trx1);
+          const trx2 = await knex.transaction();
+          // trx1 has a pending write lock, so the second call to _lockMigrations
+          // will block (unless we're on a DB that resolves the transaction in
+          // the other order as mentioned above).
+          // Save the promise, then wait a short time to ensure it's had time
+          // to start its query and get blocked.
+          const trx2Promise = migrator._lockMigrations(trx2);
+          await Bluebird.delay(100);
+          if (!trx2Promise.isPending()) {
+            throw new Error('expected trx2 to be pending');
+          }
+          await trx1.commit();
+          // trx1 has completed and unblocked trx2, which should now fail.
+          try {
+            await trx2Promise;
+            throw new Error('expected trx2 to fail');
+          } catch (error) {
+            expect(error)
+              .to.have.property('message')
+              .that.includes('already locked');
+            await trx2.rollback();
+          }
+        } finally {
+          // Clean up after ourselves (I'm not sure why the before() at the
+          // top of this file isn't doing it, but if this test fails without
+          // this call it tends to cause cascading failures).
+          await migrator._freeLock();
+        }
       });
 
       it('should report failing migration', function() {
@@ -333,7 +410,7 @@ module.exports = function(knex) {
         // Map the table names to promises that evaluate chai expectations to
         // confirm that the table exists and the 'id' and 'name' columns exist
         // within the table
-        return Promise.map(tables, function(table) {
+        return Bluebird.map(tables, function(table) {
           return knex.schema.hasTable(table).then(function(exists) {
             expect(exists).to.equal(true);
             if (exists) {
@@ -382,7 +459,7 @@ module.exports = function(knex) {
           'migration_test_4_1',
         ];
 
-        return Promise.map(expectedTables, function(table) {
+        return Bluebird.map(expectedTables, function(table) {
           return knex.schema.hasTable(table).then(function(exists) {
             expect(exists).to.equal(true);
           });
@@ -394,7 +471,7 @@ module.exports = function(knex) {
       it('should delete the most recent batch from the migration log', function() {
         return knex.migrate
           .rollback({ directory: 'test/integration/migrate/test' })
-          .spread(function(batchNo, log) {
+          .then(([batchNo, log]) => {
             expect(batchNo).to.equal(1);
             expect(log).to.have.length(2);
             expect(log[0]).to.contain(batchNo);
@@ -407,7 +484,7 @@ module.exports = function(knex) {
       });
 
       it('should drop tables as specified in the batch', function() {
-        return Promise.map(tables, function(table) {
+        return Bluebird.map(tables, function(table) {
           return knex.schema.hasTable(table).then(function(exists) {
             expect(!!exists).to.equal(false);
           });
@@ -442,7 +519,7 @@ module.exports = function(knex) {
             },
             true
           )
-          .spread(function(batchNo, log) {
+          .then(([batchNo, log]) => {
             expect(batchNo).to.equal(2);
             expect(log).to.have.length(4);
             return knex('knex_migrations')
@@ -454,7 +531,7 @@ module.exports = function(knex) {
       });
 
       it('should drop tables as specified in the batch', () => {
-        return Promise.map(tables, function(table) {
+        return Bluebird.map(tables, function(table) {
           return knex.schema.hasTable(table).then(function(exists) {
             expect(!!exists).to.equal(false);
           });
@@ -480,7 +557,7 @@ module.exports = function(knex) {
             },
             true
           )
-          .spread(function(batchNo, log) {
+          .then(([batchNo, log]) => {
             expect(batchNo).to.equal(1);
             expect(log).to.have.length(2);
 
@@ -499,11 +576,145 @@ module.exports = function(knex) {
       });
 
       it('should drop tables as specified in the batch', () => {
-        return Promise.map(tables, function(table) {
+        return Bluebird.map(tables, function(table) {
           return knex.schema.hasTable(table).then(function(exists) {
             expect(!!exists).to.equal(false);
           });
         });
+      });
+    });
+
+    describe('knex.migrate.up', () => {
+      afterEach(() => {
+        return knex.migrate.rollback(
+          { directory: 'test/integration/migrate/test' },
+          true
+        );
+      });
+
+      it('should only run the first migration if no migrations have run', function() {
+        return knex.migrate
+          .up({
+            directory: 'test/integration/migrate/test',
+          })
+          .then(() => {
+            return knex('knex_migrations')
+              .select('*')
+              .then(function(data) {
+                expect(data).to.have.length(1);
+                expect(path.basename(data[0].name)).to.equal(
+                  '20131019235242_migration_1.js'
+                );
+              });
+          });
+      });
+
+      it('should only run the next migration that has not yet run if other migrations have already run', function() {
+        return knex.migrate
+          .up({
+            directory: 'test/integration/migrate/test',
+          })
+          .then(() => {
+            return knex.migrate
+              .up({
+                directory: 'test/integration/migrate/test',
+              })
+              .then(() => {
+                return knex('knex_migrations')
+                  .select('*')
+                  .then(function(data) {
+                    expect(data).to.have.length(2);
+                    expect(path.basename(data[0].name)).to.equal(
+                      '20131019235242_migration_1.js'
+                    );
+                    expect(path.basename(data[1].name)).to.equal(
+                      '20131019235306_migration_2.js'
+                    );
+                  });
+              });
+          });
+      });
+
+      it('should not error if all migrations have already been run', function() {
+        return knex.migrate
+          .latest({
+            directory: 'test/integration/migrate/test',
+          })
+          .then(() => {
+            return knex.migrate
+              .up({
+                directory: 'test/integration/migrate/test',
+              })
+              .then((data) => {
+                expect(data).to.be.an('array');
+              });
+          });
+      });
+    });
+
+    describe('knex.migrate.down', () => {
+      beforeEach(() => {
+        return knex.migrate.latest({
+          directory: ['test/integration/migrate/test'],
+        });
+      });
+
+      afterEach(() => {
+        return knex.migrate.rollback(
+          { directory: ['test/integration/migrate/test'] },
+          true
+        );
+      });
+
+      it('should only undo the last migration that was run if all migrations have run', function() {
+        return knex.migrate
+          .down({
+            directory: ['test/integration/migrate/test'],
+          })
+          .then(() => {
+            return knex('knex_migrations')
+              .select('*')
+              .then((data) => {
+                expect(data).to.have.length(1);
+                expect(path.basename(data[0].name)).to.equal(
+                  '20131019235242_migration_1.js'
+                );
+              });
+          });
+      });
+
+      it('should only undo the last migration that was run if there are other migrations that have not yet run', function() {
+        return knex.migrate
+          .down({
+            directory: ['test/integration/migrate/test'],
+          })
+          .then(() => {
+            return knex.migrate
+              .down({
+                directory: ['test/integration/migrate/test'],
+              })
+              .then(() => {
+                return knex('knex_migrations')
+                  .select('*')
+                  .then((data) => {
+                    expect(data).to.have.length(0);
+                  });
+              });
+          });
+      });
+
+      it('should not error if all migrations have already been undone', function() {
+        return knex.migrate
+          .rollback({ directory: ['test/integration/migrate/test'] }, true)
+          .then(() => {
+            return knex.migrate
+              .down({
+                directory: ['test/integration/migrate/test'],
+              })
+              .then((data) => {
+                expect(data).to.be.an('array');
+              });
+          });
       });
     });
 
@@ -535,7 +746,7 @@ module.exports = function(knex) {
     }
 
     it('is not able to run two migrations in parallel when transactions are disabled', function() {
-      return Promise.map(
+      return Bluebird.map(
         [
           knex.migrate
             .latest({
@@ -782,7 +993,7 @@ module.exports = function(knex) {
         'migration_test_2',
         'migration_test_2_1a',
       ];
-      return Promise.map(tables, function(table) {
+      return Bluebird.map(tables, function(table) {
         return knex.schema.hasTable(table).then(function(exists) {
           expect(exists).to.equal(true);
           if (exists) {

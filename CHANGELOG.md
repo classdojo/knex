@@ -1,35 +1,242 @@
 # Master (Unreleased)
 
-# 0.16.7 - 12 May, 2019
+# 0.19.5 - 06 October, 2019
 
 ### New features:
 
-- Add clearHaving function #3141
-- Add --all flag for rollback in CLI #3187
+- CLI: Migrations up/down commands - filename parameter #3416
+- Oracle: Support stored procedures #3449
+
+### Bug fixes:
+
+- MSSQL: Escape column ids correctly in all cases (reported by Snyk Security Research Team) #3382
+- SQLite: Fix handling of multiline SQL in SQLite3 schema #3411
+- Fix concurrent child transactions failing #2213 #3440
+
+### Typings:
+
+- Add missing Migrator.list typing #3460
+- Fix Typescript type inference for to better support wildcard (*) calls #3444
+- Make options argument optional in timeout #3442
+
+### Test / internal changes:
+
+- Enable linting in CI #3450
+
+# 0.19.4 - 09 September, 2019
+
+### New features:
+
+- Add undefined columns to undefined binding(s) error #3425
+
+### Typings:
+
+- Add `specific` to SeederConfig type #3429
+- Fix some issues with QueryBuilder types #3427
+
+# 0.19.3 - 25 August, 2019
+
+### Bug fixes:
+
+- Fix migrations for native enums to use table schema #3307
+
+### New features:
+
+- Add ability to manually define schema for native enums #3307
+- Add SSL/TLS support for Postgres connection string #3410
+- CLI: new command that lists all migrations with status #3390
+
+### Typings:
+
+- Include schemaName in EnumOptions #3415
+- Allow `ColumnBuilder.defaultTo()` to be `null` #3407
+
+### Changes:
+
+- migrate: Refactor _lockMigrations to avoid forUpdate - makes migrations compatible with CockroachDB #3395
+
+# 0.19.2 - 17 August, 2019
+
+### Changes:
+
+- Make transaction rejection consistent across dialects #3399
+- More consistent handling of nested transactions #3393
+
+### New features:
+
+- Fallback to JSON when using JSONB in MySQL #3394 
+
+# 0.19.1 - 23 July, 2019
+
+### New features:
+
+- Allow to extend knex query builder #3334
+- Add .isCompleted() to transaction #3368
+- Minor enhancements around aliasing of aggregates #3354
+
+### Typings:
+
+- Update configuration typings to allow for oracle db connectionstring #3361
+- Update Knex.raw type to be any by default because the actual type is dialect specific #3349
+
+# 0.19.0 - 11 July, 2019
+
+### Changes:
+
+- Pooling: tarn.js connection pool was updated to version 2.0.0. This fixes issue with destroying connections and introduces support for connection pool event handlers. Please see tarn.js documentation for more details #3345 
+- Pooling: Passing unsupported pooling configuration options now throws an error
+- Pooling: `beforeDestroy` configuration option was removed
+
+# 0.18.4 - 10 July, 2019
+
+### New features:
+
+- Seeds: Option to run specific seed file #3335
+- Implement "skipLocked()" and "noWait()" #2961
+
+### Bug fixes:
+
+- CLI: Respect the knexfile stub option while generating a migration #3337
+- Fix mssql import not being ignored, breaking webpack builds #3336
+
+# 0.18.3 - 04 July, 2019
+
+### New features:
+
+- CLI: add --stub option to migration:make #3316
+
+### Bug fixes:
+
+- Fix return duplicate transaction promise for standalone transactions #3328
+
+# 0.18.2 - 03 July, 2019
+
+### Bug fixes:
+
+- Fix remove duplicate transaction rejection #3324
+- Fix issues around specifying default values for columns #3318
+- CLI: Fix empty --version output #3312
+
+# 0.18.1 - 30 June, 2019
+
+### Bug fixes:
+
+- Do not reject duplicate promise on transaction rollback #3319
+
+# 0.18.0 - 26 June, 2019
+
+### Bug fixes:
+
+- Do not reject promise on transaction rollback (by default only for new, non-callback, style of transactions for now to avoid breaking old code) #3235
+
+### New features:
+
+- Added `doNotRejectOnRollback` options for starting transactions, to prevent rejecting promises on rollback for callback-style transactions.
+- Use extension from knexfile for generating migrations unless overriden #3282
+- Use migrations.extension from config when generating migration #3242
+- Expose executionPromise for transactors #3297
+
+### Bug fixes:
+
+- Oracle: Updated handling of connection errors for disposal #2608
+- Fix extension resolution from env configs #3294
+
+### Test / internal changes:
+
+- Drop support for Node.js 6 #3227
+- Remove Babel #3227
+- Remove Bluebird #3290 #3287 #3285 #3267 #3266 #3263
+- Fix comments that were modified by find & replace #3308
+
+### Typings:
+
+- Add workarounds for degraded inference when strictNullChecks is set to false #3275
+- Add stub type definition for Migrator config #3279
+- Add stub to seeds type #3296
+- Fix MSSQL config typings #3269
+- Add pgsql specific table builder method typings #3146
+
+# 0.17.5 - 8 June, 2019
+
+### Typings:
+
+- Include result.d.ts in published package #3271
+
+# 0.17.4 - 8 June, 2019
+
+### Typings:
+
+- Fix some cases of left-to-right inference causing type mismatch #3265
+- Improve count typings #3249
+
+### Bug fixes:
+
+- Fix error message bubbling up on seed error #3248
+
+# 0.17.3 - 2 June, 2019
+
+### Typings:
+
+- Improve typings for aggregations #3245
+- Add decimalNumbers to MySqlConnectionConfig interface #3244
+
+# 0.17.2 - 1 June, 2019
 
 ### Typings
 
-- Add default values for generic types (fixes backwards compatibility broken by 0.16.6) #3189
+- Improve count typings #3239
 
-# 0.16.6 - 11 May, 2019
+### Bug fixes:
+
+- "colorette" dependency breaks browserify builds #3238
+
+# 0.17.1 - 31 May, 2019
 
 ### New features:
 
+- Add migrate:down functionality #3228
+
+### Typings:
+
+- Update type of aggregation results to not be arrays when first has been invoked before #3237
+- Include undefined in type of single row results #3231
+- Fix incorrect type definitions for single row queries #3230
+
+# 0.17.0 - 28 May, 2019
+
+### New features:
+
+- Add support for returning started transaction without immediately executing it #3099
+- Add support for passing transaction around with only starting it when needed #3099
+- Add clearHaving function #3141
+- Add --all flag for rollback in CLI #3187
 - Add error detail log to knex CLI #3149
+- Support multi-column whereIn in sqlite through values clause #3220
+- Allow users to specify the migrations "tableName" parameter via the CLI #3214
+- Unify object options handling for datetime/timestamp across dialects #3181
+- Add "up" command for migrations #3205
+
+### Typings:
+
+- Add default values for generic types (fixes backwards compatibility broken by 0.16.6) #3189
+- Make function types generic in type definitions #3168
+- Add missing types to MigratorConfig #3174
+- Add types for havingBetween, orHavingBetween, havingNotBetween and orHavingNotBetween #3144
+- Update Knex.Config types to include log #3221
+- Fix some more cases of missing typings #3223
+- Support type safe refs #3215
+- Expose some utility types #3211
+- Fix issues with typings of joins and some conflicts with Bluebird typings #3209
 
 ### Bug fixes:
 
 - Fix order of migration rollback #3172
 
-### Typings
-
-- Make function types generic in type definitions #3168
-- Add missing types to MigratorConfig #3174
-- Add types for havingBetween, orHavingBetween, havingNotBetween and orHavingNotBetween #3144
-
 ### Test / internal changes:
 
 - Execute CI tests on Node.js 12 #3171
+- Docker-based test dbs #3157
+- Use cli-testlab for testing CLI #3191
 
 # 0.16.5 - 11 Apr, 2019
 
@@ -142,7 +349,7 @@
 - Knex client knexfile resolution fix #2923
 - Add queryContext to type declarations #2931
 
-### Test / internal changes
+### Test / internal changes:
 
 - Add tests for multiple union arguments with callbacks and builders #2749
 - Update dependencies #2772 #2810 #2842 #2848 #2893 #2904
@@ -210,7 +417,7 @@
 - Add support for native enums on Postgres #2632
 - Allow overwriting log functions #2625
 
-### Test / internal changes
+### Test / internal changes:
 
 - chore: cache node_modules #2595
 - Remove babel-plugin-lodash #2634
@@ -240,7 +447,7 @@
 - Checks for an empty, undefined or null object on transacting #2494
 - countDistinct with multiple columns #2449
 
-### Test / internal changes
+### Test / internal changes:
 
 - Added npm run test:oracledb command that runs oracledb tests in docker #2491
 - Runnin mssql tests in docker #2496
@@ -260,7 +467,7 @@
 - Allow calling lock procedures (such as forUpdate) outside of transaction. Fixes #2403. (#2475)
 - Added test and documentation for Event 'start' (#2488)
 
-### Test / internal changes
+### Test / internal changes:
 
 - Added stress test, which uses TCP proxy to simulate flaky connection #2460
 - Removed old docker tests, new stress test setup (#2474)
@@ -288,7 +495,7 @@
 - Added redshift dialect #2233
 - Added warning when one uses .createTableIfNotExist and deprecated it from docs #2458
 
-### Test / internal changes
+### Test / internal changes:
 
 - Update dependencies and fix ESLint warnings accordingly #2433
 - Disable oracledb tests from non LTS nodes #2407
@@ -351,7 +558,7 @@
 - Fix mssql wrong binding order of queries that combine a limit with select raw or update #2066
 - Fixed mysql alter table attributes order #2062
 
-### Test / internal changes
+### Test / internal changes:
 
 - Update each out-of-date dependency according to david-dm.org #2297
 - Update v8flags to version 3.0.0 #2288
@@ -676,17 +883,17 @@
 
 # 0.7.0 - Oct 1, 2014
 
-### New Features
+### New Features:
 
 - Oracle support, #419
 - Database seed file support, #391
 - Improved support for sub-raw queries within raw statements
 
-### Breaking Changes
+### Breaking Changes:
 
 - "collate nocase" no longer used by default in sqlite3 #396
 
-### Other Changes
+### Other Changes:
 
 - Bumping Bluebird to ^2.x
 - Transactions in websql are now a no-op (unsupported) #375

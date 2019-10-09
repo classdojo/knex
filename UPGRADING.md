@@ -1,5 +1,22 @@
 ## Upgrading to new knex.js versions
 
+### Upgrading to version 0.19.0+
+
+* Passing unknown properties to connection pool configuration now throws errors (see https://github.com/Vincit/tarn.js/issues/19 for details);
+* `beforeDestroy` pool configuration option was removed. You should use tarn.js event handlers if you still need similar functionality.
+
+### Upgrading to version 0.18.0+
+
+* Node.js older than 8 is no longer supported, make sure to update your environment;
+* Knex returns native promises instead of bluebird ones now. You will need to update your code not to rely on bluebird-specific functionality;
+* Knex.Promise was removed, use native promises;
+* Promise is no longer passed to migrations and seeds, use native one;
+* If you are using TypeScript, make sure to include 'es6' in compilerOptions.lib, otherwise you may get errors for methods `.catch()` and `then()` not being recognized.
+
+### Upgrading to version 0.17.0+
+
+* Generic support was implemented for TypeScript bindings, which may break TS builds in some edge cases. Please refer to https://knexjs.org/#typescript-support for more elaborate documentation.
+
 ### Upgrading to version 0.16.0+
 
 * MSSQL: DB versions older than 2008 are no longer supported, make sure to update your DB;
