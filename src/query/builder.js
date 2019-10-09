@@ -610,8 +610,45 @@ assign(Builder.prototype, {
     return this;
   },
 
+  _union(clause, args) {
+    let callbacks = args[0];
+    let wrap = args[1];
+    if (args.length === 1 || (args.length === 2 && isBoolean(wrap))) {
+      if (!Array.isArray(callbacks)) {
+        callbacks = [callbacks];
+      }
+      for (let i = 0, l = callbacks.length; i < l; i++) {
+        this._statements.push({
+          grouping: 'union',
+          clause: clause,
+          value: callbacks[i],
+          wrap: wrap || false,
+        });
+      }
+    } else {
+      callbacks = toArray(args).slice(0, args.length - 1);
+      wrap = args[args.length - 1];
+      if (!isBoolean(wrap)) {
+        callbacks.push(wrap);
+        wrap = false;
+      }
+      this._union(clause, [callbacks, wrap]);
+    }
+    return this;
+  },
+
   // Add a union statement to the query.
-  union(callbacks, wrap) {
+  union(...args) {
+    return this._union('union', args);
+  },
+
+  // Adds a union all statement to the query.
+  unionAll(...args) {
+    return this._union('union all', args);
+  },
+
+  // Adds an intersect statement to the query
+  intersect(callbacks, wrap) {
     if (arguments.length === 1 || (arguments.length === 2 && isBoolean(wrap))) {
       if (!Array.isArray(callbacks)) {
         callbacks = [callbacks];
@@ -619,7 +656,7 @@ assign(Builder.prototype, {
       for (let i = 0, l = callbacks.length; i < l; i++) {
         this._statements.push({
           grouping: 'union',
-          clause: 'union',
+          clause: 'intersect',
           value: callbacks[i],
           wrap: wrap || false,
         });
@@ -631,19 +668,8 @@ assign(Builder.prototype, {
         callbacks.push(wrap);
         wrap = false;
       }
-      this.union(callbacks, wrap);
+      this.intersect(callbacks, wrap);
     }
-    return this;
-  },
-
-  // Adds a union all statement to the query.
-  unionAll(callback, wrap) {
-    this._statements.push({
-      grouping: 'union',
-      clause: 'union all',
-      value: callback,
-      wrap: wrap || false,
-    });
     return this;
   },
 
@@ -970,15 +996,21 @@ assign(Builder.prototype, {
     return this;
   },
 
-  // Remove everything from select clause
+  // Remove everything from where clause
   clearWhere() {
     this._clearGrouping('where');
     return this;
   },
 
-  // Remove everything from select clause
+  // Remove everything from order clause
   clearOrder() {
     this._clearGrouping('order');
+    return this;
+  },
+
+  // Remove everything from having clause
+  clearHaving() {
+    this._clearGrouping('having');
     return this;
   },
 

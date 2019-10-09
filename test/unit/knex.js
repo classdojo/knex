@@ -4,6 +4,7 @@ const bluebird = require('bluebird');
 const sqliteConfig = require('../knexfile').sqlite3;
 const sqlite3 = require('sqlite3');
 const { noop } = require('lodash');
+const { isNode6 } = require('../../lib/util/version-helper');
 
 describe('knex', () => {
   it('preserves global Bluebird Promise', () => {
@@ -102,6 +103,69 @@ describe('knex', () => {
     });
   });
 
+  it('copying does not result in duplicate listeners', () => {
+    if (isNode6()) {
+      return;
+    }
+
+    const knex = Knex({
+      client: 'sqlite',
+    });
+    const knexWithParams = knex.withUserParams();
+
+    expect(knex.client.listeners('start').length).to.equal(1);
+    expect(knex.client.listeners('query').length).to.equal(1);
+    expect(knex.client.listeners('query-error').length).to.equal(1);
+    expect(knex.client.listeners('query-response').length).to.equal(1);
+
+    expect(knexWithParams.client.listeners('start').length).to.equal(1);
+    expect(knexWithParams.client.listeners('query').length).to.equal(1);
+    expect(knexWithParams.client.listeners('query-error').length).to.equal(1);
+    expect(knexWithParams.client.listeners('query-response').length).to.equal(
+      1
+    );
+  });
+
+  it('listeners added to knex directly get copied correctly', () => {
+    const knex = Knex({
+      client: 'sqlite',
+    });
+    const onQueryResponse = function(response, obj, builder) {};
+    expect(knex.listeners('query-response').length).to.equal(0);
+    knex.on('query-response', onQueryResponse);
+
+    const knexWithParams = knex.withUserParams();
+
+    expect(knex.listeners('query-response').length).to.equal(1);
+    expect(knexWithParams.listeners('query-response').length).to.equal(1);
+  });
+
+  it('adding listener to copy does not affect base knex', () => {
+    if (isNode6()) {
+      return;
+    }
+
+    const knex = Knex({
+      client: 'sqlite',
+    });
+
+    expect(knex.client.listeners('start').length).to.equal(1);
+    expect(knex.client.listeners('query').length).to.equal(1);
+    expect(knex.client.listeners('query-error').length).to.equal(1);
+    expect(knex.client.listeners('query-response').length).to.equal(1);
+
+    const knexWithParams = knex.withUserParams();
+    knexWithParams.client.on('query', (obj) => {
+      knexWithParams.emit('query', obj);
+    });
+
+    expect(knex.client.listeners('start').length).to.equal(1);
+    expect(knex.client.listeners('query').length).to.equal(1);
+    expect(knex.client.listeners('query-error').length).to.equal(1);
+    expect(knex.client.listeners('query-response').length).to.equal(1);
+    expect(knexWithParams.client.listeners('query').length).to.equal(2);
+  });
+
   it('sets correct postProcessResponse for builders instantiated from clone', () => {
     const knex = Knex({
       client: 'sqlite',
@@ -119,6 +183,84 @@ describe('knex', () => {
     expect(
       builderWithParamsForTable.client.config.postProcessResponse
     ).to.equal(null);
+  });
+
+  it('passes queryContext to wrapIdentifier in raw query', () => {
+    const knex = Knex(
+      Object.assign({}, sqliteConfig, {
+        wrapIdentifier: (str, origImpl, queryContext) => {
+          if (!queryContext) {
+            throw Error('We should have queryContext here right?');
+          }
+
+          if (str === 'iAmGoingToBeConvertedToId') {
+            str = 'id';
+          }
+          return origImpl(str);
+        },
+      })
+    );
+
+    return knex.schema
+      .queryContext({ someStuff: true })
+      .dropTableIfExists('test')
+      .then(() => {
+        return knex.schema
+          .queryContext({ someStuff: true })
+          .createTable('test', (table) => {
+            table.increments('id');
+            table.string('text');
+          });
+      })
+      .then(() => {
+        return knex('test')
+          .queryContext({ someStuff: true })
+          .select('id')
+          .whereRaw('id = ??', 'iAmGoingToBeConvertedToId');
+      })
+      .then(() => {
+        return knex.schema.queryContext({ someStuff: true }).dropTable('test');
+      });
+  });
+
+  it('passes queryContext to wrapIdentifier in raw query in transaction', () => {
+    const knex = Knex(
+      Object.assign({}, sqliteConfig, {
+        wrapIdentifier: (str, origImpl, queryContext) => {
+          if (!queryContext) {
+            throw Error('We should have queryContext here right?');
+          }
+
+          if (str === 'iAmGoingToBeConvertedToId') {
+            str = 'id';
+          }
+          return origImpl(str);
+        },
+      })
+    );
+
+    return knex.transaction((trx) => {
+      return trx.schema
+        .queryContext({ someStuff: true })
+        .dropTableIfExists('test')
+        .then(() => {
+          return trx.schema
+            .queryContext({ someStuff: true })
+            .createTable('test', (table) => {
+              table.increments('id');
+              table.string('text');
+            });
+        })
+        .then(() => {
+          return trx('test')
+            .queryContext({ someStuff: true })
+            .select('id')
+            .whereRaw('id = ??', 'iAmGoingToBeConvertedToId');
+        })
+        .then(() => {
+          return trx.schema.queryContext({ someStuff: true }).dropTable('test');
+        });
+    });
   });
 
   it('sets correct postProcessResponse for chained builders', () => {
@@ -171,17 +313,18 @@ describe('knex', () => {
   });
 
   it('throws if client module has not been installed', () => {
-    expect(Knex({ client: 'oracle' })).to.throw(
-      /Knex: run\n$ npm install oracle/
+    expect(() => {
+      Knex({ client: 'oracledb', connection: {} });
+    }).to.throw(
+      "Knex: run\n$ npm install oracledb --save\nCannot find module 'oracledb'"
     );
   });
 
   describe('async stack traces', () => {
     it('should capture stack trace on query builder instantiation', () => {
-      const knex = Knex({
-        ...sqliteConfig,
-        asyncStackTraces: true,
-      });
+      const knex = Knex(
+        Object.assign({}, sqliteConfig, { asyncStackTraces: true })
+      );
 
       return knex('some_nonexisten_table')
         .select()
