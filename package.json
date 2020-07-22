@@ -96,7 +96,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git://github.com/tgriesser/knex.git"
+    "url": "ssh://git@github.com/classdojo/knex.git"
   },
   "homepage": "https://knexjs.org",
   "keywords": [
