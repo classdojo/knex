@@ -27,6 +27,9 @@ const knex2 = Knex({
     ...clientConfig,
     log: {
         debug(msg: string) {}
+    },
+    pool: {
+      log: (msg: string, level: string) => {}
     }
 });
 
@@ -53,6 +56,13 @@ interface Article {
   authorId?: string;
 }
 
+interface Ticket {
+  name: string;
+  from: string;
+  to: string;
+  at: Date;
+}
+
 // Interface to witness type compatibility
 interface ExtendsWitness<T1 extends T2, T2> {
   _t: T1;
@@ -77,6 +87,7 @@ type _T7 = ExtendsWitness<
 >;
 type _T8 = ExtendsWitness<Knex.QueryBuilder<User, number[]>, Knex.QueryBuilder>;
 type _T9 = ExtendsWitness<Knex.QueryBuilder<any, any[]>, Knex.QueryBuilder>;
+type _T10 = ExtendsWitness<Knex.QueryBuilder<User, number>, Knex.QueryBuilder>;
 
 const main = async () => {
   // # Select:
@@ -85,7 +96,7 @@ const main = async () => {
   await knex('users');
 
   // $ExpectType number[]
-  const x = await knex('users').customSelect<any, number[]>(42);
+  await knex('users').customSelect<any, number[]>(42);
 
   // This test (others similar to it) may seem useless but they are needed
   // to test for left-to-right inference issues eg: #3260
@@ -114,6 +125,14 @@ const main = async () => {
   await knex('users').first('id');
 
   // $ExpectType any
+  await knex
+    .first('*')
+    .from('table')
+    .where({
+      whatever: 'whatever'
+    });
+
+  // $ExpectType any
   await knex('users').first('id', 'name');
 
   const u3: User = await knex('users').first('id', 'name');
@@ -129,6 +148,12 @@ const main = async () => {
 
   // $ExpectType { identifier: number; } | undefined
   await knex<User>('users').first(knex.ref('id').as('identifier'));
+
+  // $ExpectType { id: number; name: string; }[]
+  await knex<User>('users').select([
+    knex.ref('name'),
+    knex.ref('id')
+  ]);
 
   // $ExpectType Pick<User, "id"> | undefined
   await knex.first('id').from<User>('users');
@@ -183,11 +208,27 @@ const main = async () => {
       ]
   );
 
+  // $ExpectType Article[]
+  await knex.raw<Article[]>(
+      'select * from articles where authorId = ?',
+      [ null ]
+  );
+
+  // $ExpectType User[]
+  await knex<User>('user').where('name', ['a', 'b', 'c']);
+
   // $ExpectType User[]
   await knex<User>('user').whereRaw('name = ?', 'L');
 
   // $ExpectType User[]
   await knex<User>('user').whereRaw('name = ?', 'L').clearWhere();
+
+  // $ExpectType User[]
+  await knex<User>('user').whereBetween("id", [1, 2]);
+
+  const range = [1, 2] as const;
+  // $ExpectType User[]
+  await knex<User>('user').whereBetween("id", range);
 
   // $ExpectType { id: number; }[]
   const r3 = await knex<User>('users').select(knex.ref('id'));
@@ -474,6 +515,16 @@ const main = async () => {
     .orderBy('name', 'desc')
     .having('age', '>', 10);
 
+  const u5: User[] = await knex('users')
+    .groupBy('count')
+    .orderBy('name', 'desc')
+    .having(knex.raw('age > ?', 10));
+
+  const u6: User[] = await knex('users')
+    .groupBy('count')
+    .orderBy('name', 'desc')
+    .having(knex.raw('age'), '>', 10);
+
   // $ExpectType User[]
   await knex<User>('users')
     .groupBy('count')
@@ -491,6 +542,43 @@ const main = async () => {
     .groupByRaw('count')
     .orderBy('name', 'desc')
     .havingRaw('age > ?', [10]);
+
+  // $ExpectType User[]
+  await knex<User>('users')
+    .select()
+    .orderBy(
+      knex<User>('users')
+        .select('u.id')
+        .from('users as u')
+        .where('users.id', 'u.id')
+    );
+
+  await knex<User>('users')
+    .select()
+    .orderBy([{
+      column: knex<User>('users')
+        .select('u.id')
+        .from('users as u')
+        .where('users.id', 'u.id'),
+      order: 'desc'
+    }]);
+
+  await knex<User>('users')
+    .select()
+    .orderBy([{
+      column: 'id',
+      order: 'desc'
+    }, {
+      column: 'name',
+      order: 'desc'
+    }]);
+
+  await knex<User>('users')
+    .select()
+    .orderBy([{
+      column: 'id',
+      order: 'desc'
+    }, 'name']);
 
   // $ExpectType Dict<string | number>[]
   await knex<User>('users').count();
@@ -664,6 +752,21 @@ const main = async () => {
       this.where('id', '>', 10);
     })
     .first();
+
+  const values = [[1, 'a'], [2, 'b']] as const;
+  const cols = ['id', 'name'] as const;
+
+  // $ExpectType User[]
+  await knex<User>('users')
+    .whereIn<"id" | "name">(cols, values);
+
+  // $ExpectType User[]
+  await knex<User>('user').whereIn('id', [1, 2]);
+
+  const col = 'id';
+  const idList = [1, 2] as const;
+  // $ExpectType User[]
+  await knex<User>('user').whereIn(col, idList);
 
   // $ExpectType User[]
   await knex<User>('users').whereNotExists(function() {
@@ -865,6 +968,10 @@ const main = async () => {
 
   const qb2 = knex<User>('users');
   qb2.returning(['id', 'name']);
+
+  const qb2ReturnCols = ['id', 'name'] as const;
+  qb2.returning(qb2ReturnCols);
+
   // $ExpectType Partial<User>[]
   await qb2.insert<Partial<User>[]>({ id: 10 });
 
@@ -1026,11 +1133,28 @@ const main = async () => {
     .where('id', 10)
     .update({ active: true }, 'id');
 
+  // $ExpectType number[]
+  await knex<User>('users')
+    .where('id', 10)
+    .update('active', true, 'id');
+
   // $ExpectType Pick<User, "id" | "age">[]
   await knex<User>('users')
     .where('id', 10)
     .update({ active: true }, ['id', 'age']);
 
+  // $ExpectType Pick<User, "id" | "age">[]
+  await knex<User>('users')
+    .where('id', 10)
+    .update('active', true, ['id', 'age']);
+
+  const userUpdateReturnCols = ['id', 'age'] as const;
+  // $ExpectType Pick<User, "id" | "age">[]
+  await knex<User>('users')
+    .where('id', 10)
+    .update({ active: true }, userUpdateReturnCols);
+
+  // TODO: .update('active', true', ['id', 'age']) does not works correctly
   // $ExpectType Pick<User, "id" | "age">[]
   await knex
     .where('id', 10)
@@ -1139,11 +1263,6 @@ const main = async () => {
 
   // $ExpectType any[]
   await knex.transaction(async (trx) => {
-    const articles: Article[] = [
-      { id: 1, subject: 'Canterbury Tales' },
-      { id: 2, subject: 'Moby Dick' },
-      { id: 3, subject: 'Hamlet' },
-    ];
     return trx.insert({ name: 'Old Books' }, 'id').into('articles');
   });
 
@@ -1154,6 +1273,19 @@ const main = async () => {
       { id: 2, subject: 'Moby Dick' },
       { id: 3, subject: 'Hamlet' },
     ];
+    return trx
+      .insert(articles)
+      .into<Article>('articles')
+      .returning(['id', 'subject']);
+  });
+
+  // $ExpectType Pick<Article, "id" | "subject">[]
+  await knex.transaction(async (trx) => {
+    const articles = [
+      { id: 1, subject: 'Canterbury Tales' },
+      { id: 2, subject: 'Moby Dick' },
+      { id: 3, subject: 'Hamlet' },
+    ] as const;
     return trx
       .insert(articles)
       .into<Article>('articles')
@@ -1174,6 +1306,21 @@ const main = async () => {
       .then(trx.commit)
       .catch(trx.rollback);
   });
+
+    // $ExpectType any
+    await knex.transaction(async (trx) => {
+      const articles: ReadonlyArray<Article> = [
+        { id: 1, subject: 'Canterbury Tales' },
+        { id: 2, subject: 'Moby Dick' },
+        { id: 3, subject: 'Hamlet' },
+      ];
+      return knex
+        .insert(articles, ['id', 'subject'])
+        .into<Article>('articles')
+        .transacting(trx)
+        .then(trx.commit)
+        .catch(trx.rollback);
+    });
 
   // $ExpectType Pick<Article, "id" | "subject">[]
   await knex.transaction(
@@ -1303,12 +1450,72 @@ const main = async () => {
       directory: 'lib/seeds'
   });
 
-  // $ExpectType string[]
+  // $ExpectType [string[]]
   await knex.seed.run();
 
-  // $ExpectType string[]
+  // $ExpectType [string[]]
   await knex.seed.run({
       extension: 'ts',
       directory: 'lib/seeds'
   });
+
+  // $ExpectType any[]
+  await knex('users', { only: true });
+
+  // $ExpectType any[]
+  await knex
+    .select('*')
+    .from('users', { only: true });
+
+  // $ExpectType any
+  knex.queryBuilder().queryContext();
+
+  // .raw() support
+
+  // $ExpectType User[]
+  await knex<User>('users')
+    .where({
+      id: knex.raw<number>('a')
+    });
+
+  // $ExpectType User[]
+  await knex<User>('users')
+    .where('id', knex.raw<string>('a'));
+
+  // $ExpectType Ticket[]
+  await knex<Ticket>('users')
+    .where({
+      at: knex.fn.now()
+    });
+
+  // $ExpectType User[]
+  await knex<User>('users')
+    // we can't do anything here for now
+    .where('id', knex.raw<string>('string'));
+
+  // $ExpectType number[]
+  await knex<User>('users')
+    .insert({
+      id: knex.raw<number>('a')
+    });
+
+  // $ExpectType User[]
+  await knex<User>('users')
+    .insert([{
+      id: knex.raw<number>('a')
+    }], '*');
+
+  // $ExpectType number[]
+  await knex<User>('users')
+    .update({
+      id: knex.raw<number>('a')
+    }, 'id');
+
+  // $ExpectType string[]
+  await knex<User>('users')
+    .update<'active', 'name'>('active', knex.raw<boolean>('true'), 'name');
+
+  // $ExpectType Pick<User, "name">[]
+  await knex<User>('users')
+    .update<'active', 'name'>('active', knex.raw<boolean>('true'), ['name']);
 };
